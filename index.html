@@ -1,0 +1,1204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#4A90E2">
+<title>可乐菲出入库明细</title>
+<style>
+:root {
+  --primary: #4A90E2;
+  --primary-dark: #357ABD;
+  --primary-light: #E3F2FD;
+  --success: #52C41A;
+  --warning: #FAAD14;
+  --danger: #F5222D;
+  --bg: #F5F7FA;
+  --card: #FFFFFF;
+  --text: #2C3E50;
+  --text-light: #7F8C8D;
+  --border: #E8ECF0;
+  --radius: 10px;
+  --shadow: 0 2px 8px rgba(0,0,0,0.06);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.5; }
+button { font-family: inherit; cursor: pointer; border: none; background: none; font-size: inherit; }
+input, select, textarea { font-family: inherit; font-size: inherit; color: inherit; }
+.app { max-width: 1100px; margin: 0 auto; padding: 12px; min-height: 100vh; }
+
+/* ---------- 顶部 ---------- */
+.header { background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  color: #fff; padding: 16px 18px; border-radius: var(--radius);
+  box-shadow: var(--shadow); margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+.header h1 { font-size: 18px; font-weight: 600; }
+.header .me { font-size: 13px; opacity: 0.95; }
+.header .me b { font-weight: 600; }
+.header button.logout { background: rgba(255,255,255,0.2); color: #fff; padding: 6px 14px; border-radius: 16px; font-size: 13px; }
+
+/* ---------- 标签栏 ---------- */
+.tabs { display: flex; gap: 6px; overflow-x: auto; background: var(--card);
+  padding: 6px; border-radius: var(--radius); box-shadow: var(--shadow); margin-bottom: 14px; }
+.tabs::-webkit-scrollbar { display: none; }
+.tab { padding: 9px 16px; border-radius: 8px; white-space: nowrap; color: var(--text-light); font-size: 14px; font-weight: 500; transition: 0.2s; position: relative; }
+.tab.active { background: var(--primary); color: #fff; }
+.tab .badge { position: absolute; top: -2px; right: -2px; background: var(--danger); color: #fff;
+  font-size: 11px; padding: 1px 6px; border-radius: 10px; min-width: 18px; text-align: center; }
+
+/* ---------- 卡片 ---------- */
+.card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; margin-bottom: 12px; }
+.card h2 { font-size: 16px; margin-bottom: 12px; color: var(--primary-dark); display: flex; align-items: center; gap: 6px; }
+.card h3 { font-size: 14px; margin: 12px 0 8px; color: var(--text); font-weight: 600; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+.row label { font-size: 13px; color: var(--text-light); min-width: 60px; }
+.row input, .row select, .row textarea { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--border);
+  border-radius: 6px; background: #fff; transition: 0.2s; }
+.row input:focus, .row select:focus, .row textarea:focus { outline: none; border-color: var(--primary); }
+.btn { padding: 9px 16px; border-radius: 6px; background: var(--primary); color: #fff; font-weight: 500; transition: 0.2s; }
+.btn:hover { background: var(--primary-dark); }
+.btn:disabled { background: var(--border); color: var(--text-light); cursor: not-allowed; }
+.btn.secondary { background: var(--primary-light); color: var(--primary-dark); }
+.btn.danger { background: var(--danger); }
+.btn.warning { background: var(--warning); }
+.btn.success { background: var(--success); }
+.btn.ghost { background: transparent; color: var(--primary); border: 1px solid var(--primary); }
+.btn.small { padding: 5px 10px; font-size: 12px; }
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+
+/* ---------- 表格 ---------- */
+.table-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid var(--border); }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { background: var(--primary-light); color: var(--primary-dark); padding: 9px 8px; text-align: left; font-weight: 600; white-space: nowrap; }
+td { padding: 8px; border-top: 1px solid var(--border); }
+tr:hover td { background: #FAFBFC; }
+
+/* ---------- 列表卡片 ---------- */
+.list { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+.item-card { background: var(--card); border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow); border-left: 4px solid var(--primary); }
+.item-card .name { font-weight: 600; font-size: 15px; margin-bottom: 4px; }
+.item-card .meta { color: var(--text-light); font-size: 12px; margin-bottom: 8px; }
+.item-card .qty { font-size: 22px; font-weight: 700; color: var(--primary); }
+.item-card .qty small { font-size: 13px; color: var(--text-light); font-weight: 400; margin-left: 4px; }
+.item-card.warn { border-left-color: var(--warning); }
+.item-card.warn .qty { color: var(--warning); }
+.item-card.out { border-left-color: var(--danger); }
+.item-card.out .qty { color: var(--danger); }
+
+/* ---------- Toast ---------- */
+.toast-wrap { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 9999; pointer-events: none; }
+.toast { background: rgba(0,0,0,0.85); color: #fff; padding: 10px 18px; border-radius: 22px; margin-bottom: 8px;
+  font-size: 14px; box-shadow: var(--shadow-lg); animation: toastIn 0.3s; max-width: 90vw; }
+.toast.success { background: var(--success); }
+.toast.error { background: var(--danger); }
+.toast.warning { background: var(--warning); }
+@keyframes toastIn { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+/* ---------- 模态框 ---------- */
+.modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100;
+  display: flex; align-items: center; justify-content: center; padding: 16px; animation: fadeIn 0.2s; }
+.modal { background: var(--card); border-radius: var(--radius); padding: 20px; width: 100%; max-width: 480px;
+  max-height: 90vh; overflow-y: auto; box-shadow: var(--shadow-lg); animation: modalIn 0.3s; }
+.modal h3 { margin-bottom: 14px; color: var(--primary-dark); }
+.modal .row { margin-bottom: 10px; }
+.modal .btn-row { justify-content: flex-end; margin-top: 16px; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes modalIn { from { transform: scale(0.92); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+/* ---------- 登录/注册/初始化页 ---------- */
+.auth-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px;
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark)); }
+.auth-card { background: #fff; border-radius: var(--radius); padding: 32px 28px; width: 100%; max-width: 380px; box-shadow: var(--shadow-lg); }
+.auth-card h1 { font-size: 22px; text-align: center; margin-bottom: 6px; color: var(--primary-dark); }
+.auth-card .sub { text-align: center; color: var(--text-light); font-size: 13px; margin-bottom: 24px; }
+.auth-card .field { margin-bottom: 14px; }
+.auth-card .field label { display: block; font-size: 13px; color: var(--text-light); margin-bottom: 4px; }
+.auth-card .field input { width: 100%; padding: 11px 14px; border: 1px solid var(--border); border-radius: 8px; }
+.auth-card .field input:focus { outline: none; border-color: var(--primary); }
+.auth-card button { width: 100%; padding: 12px; background: var(--primary); color: #fff; border-radius: 8px; font-size: 15px; font-weight: 500; margin-top: 6px; }
+.auth-card button:hover { background: var(--primary-dark); }
+.auth-card .alt { text-align: center; margin-top: 16px; font-size: 13px; color: var(--text-light); }
+.auth-card .alt a { color: var(--primary); text-decoration: none; }
+
+/* ---------- 状态徽章 ---------- */
+.tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
+.tag.in { background: #E8F5E9; color: #2E7D32; }
+.tag.out { background: #FFEBEE; color: #C62828; }
+.tag.damage { background: #FFF3E0; color: #E65100; }
+.tag.init { background: #E3F2FD; color: #1565C0; }
+.tag.buy { background: #F3E5F5; color: #6A1B9A; }
+.tag.pending { background: #FFF3E0; color: #E65100; }
+.tag.approved { background: #E8F5E9; color: #2E7D32; }
+.tag.rejected { background: #FFEBEE; color: #C62828; }
+.tag.done { background: #E3F2FD; color: #1565C0; }
+
+/* ---------- 诊断面板 ---------- */
+.diag-box { background: #1e1e1e; color: #e0e0e0; padding: 12px; border-radius: 6px; font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; line-height: 1.6; max-height: 400px; overflow-y: auto; }
+.empty { text-align: center; color: var(--text-light); padding: 30px 16px; font-size: 14px; }
+
+/* ---------- 工具类 ---------- */
+.flex { display: flex; gap: 8px; align-items: center; }
+.flex.between { justify-content: space-between; }
+.flex.wrap { flex-wrap: wrap; }
+.mt { margin-top: 12px; }
+.mb { margin-bottom: 12px; }
+.text-light { color: var(--text-light); font-size: 13px; }
+.danger-text { color: var(--danger); }
+</style>
+</head>
+<body>
+
+<!-- Toast 容器 -->
+<div class="toast-wrap" id="toastWrap"></div>
+
+<!-- 模态框容器 -->
+<div id="modalWrap"></div>
+
+<!-- 主体内容容器 -->
+<div id="root"></div>
+
+<script>
+'use strict';
+
+/* ============================================================
+ * API 客户端
+ * ============================================================ */
+const API = '/api';
+let TOKEN = localStorage.getItem('klf_token') || '';
+
+function setToken(t) {
+  TOKEN = t || '';
+  if (t) localStorage.setItem('klf_token', t);
+  else localStorage.removeItem('klf_token');
+}
+async function api(path, method = 'GET', body = null) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (TOKEN) opts.headers['Authorization'] = 'Bearer ' + TOKEN;
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(API + path, opts);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw Object.assign(new Error(data.error || '请求失败'), { code: r.status, data });
+  return data;
+}
+
+/* ============================================================
+ * 全局状态
+ * ============================================================ */
+const STATE = {
+  me: null,
+  items: [],
+  logs: [],
+  requests: [],
+  users: [],
+  pendingCount: 0,
+  serverTime: '',
+  tab: 'dashboard',
+};
+
+/* ============================================================
+ * UI 工具
+ * ============================================================ */
+function toast(msg, type = '') {
+  const t = document.createElement('div');
+  t.className = 'toast ' + type;
+  t.textContent = msg;
+  document.getElementById('toastWrap').appendChild(t);
+  setTimeout(() => t.remove(), 2800);
+}
+function modal(html, onClose = null) {
+  const wrap = document.getElementById('modalWrap');
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `<div class="modal">${html}</div>`;
+  bg.addEventListener('click', e => { if (e.target === bg) close(); });
+  wrap.appendChild(bg);
+  function close() {
+    bg.remove();
+    if (onClose) onClose();
+  }
+  return { bg, close };
+}
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+function fmtTime(t) {
+  if (!t) return '';
+  return t.replace('T', ' ').slice(0, 16);
+}
+
+/* ============================================================
+ * 应用入口
+ * ============================================================ */
+async function bootstrap() {
+  // 检查是否有保存的 token
+  if (TOKEN) {
+    try {
+      const r = await api('/state');
+      STATE.me = r.state.me;
+      Object.assign(STATE, r.state);
+      renderApp();
+      return;
+    } catch (e) {
+      if (e.code === 401) setToken(''); // token 失效
+      else { toast('连接服务器失败：' + e.message, 'error'); renderAuth(e.data && e.data.needSetup); return; }
+    }
+  }
+  // 无 token，看是否需要初始化
+  try {
+    const r = await fetch(API + '/state').then(r => r.json()).catch(() => ({}));
+    renderAuth(r.needSetup);
+  } catch (e) {
+    renderAuth(false); // 网络问题让用户试试
+  }
+}
+
+/* ============================================================
+ * 登录 / 注册 / 初始化页面
+ * ============================================================ */
+function renderAuth(needSetup) {
+  const root = document.getElementById('root');
+  if (needSetup) {
+    root.innerHTML = `
+      <div class="auth-wrap">
+        <div class="auth-card">
+          <h1>📦 可乐菲出入库</h1>
+          <div class="sub">系统尚未初始化 · 请创建管理员账号</div>
+          <div class="field"><label>管理员姓名</label><input id="authName" placeholder="如：小雪老师" autocomplete="username"></div>
+          <div class="field"><label>密码（至少 4 位）</label><input id="authPass" type="password" autocomplete="new-password"></div>
+          <button onclick="doSetup()">创建并进入系统</button>
+        </div>
+      </div>`;
+    setTimeout(() => document.getElementById('authName')?.focus(), 100);
+  } else {
+    root.innerHTML = `
+      <div class="auth-wrap">
+        <div class="auth-card">
+          <h1>📦 可乐菲出入库</h1>
+          <div class="sub">多用户云端版 · 数据长期保存</div>
+          <div class="field"><label>姓名</label><input id="authName" placeholder="如：小雪老师" autocomplete="username"></div>
+          <div class="field"><label>密码</label><input id="authPass" type="password" autocomplete="current-password"></div>
+          <button onclick="doLogin()">登录</button>
+          <div class="alt">还没账号？<a href="#" onclick="showRegister();return false;">点这里自助注册</a></div>
+        </div>
+      </div>`;
+    setTimeout(() => document.getElementById('authName')?.focus(), 100);
+  }
+}
+async function doSetup() {
+  const name = document.getElementById('authName').value.trim();
+  const pass = document.getElementById('authPass').value;
+  if (!name || pass.length < 4) return toast('姓名必填，密码至少 4 位', 'warning');
+  try {
+    const r = await api('/setup', 'POST', { name, pass });
+    setToken(r.token);
+    afterLogin(r.state);
+    toast('系统初始化成功，欢迎 ' + name + '！', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+}
+async function doLogin() {
+  const name = document.getElementById('authName').value.trim();
+  const pass = document.getElementById('authPass').value;
+  if (!name || !pass) return toast('请填写姓名和密码', 'warning');
+  try {
+    const r = await api('/login', 'POST', { name, pass });
+    setToken(r.token);
+    afterLogin(r.state);
+    toast('登录成功', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+}
+function showRegister() {
+  const root = document.getElementById('root');
+  root.innerHTML = `
+    <div class="auth-wrap">
+      <div class="auth-card">
+        <h1>📦 自助注册</h1>
+        <div class="sub">注册后默认是普通用户，管理员可在用户管理页提权</div>
+        <div class="field"><label>姓名</label><input id="authName" placeholder="如：王老师" autocomplete="username"></div>
+        <div class="field"><label>密码（至少 4 位）</label><input id="authPass" type="password" autocomplete="new-password"></div>
+        <button onclick="doRegister()">注册并登录</button>
+        <div class="alt">已有账号？<a href="#" onclick="bootstrap();return false;">返回登录</a></div>
+      </div>
+    </div>`;
+  setTimeout(() => document.getElementById('authName')?.focus(), 100);
+}
+async function doRegister() {
+  const name = document.getElementById('authName').value.trim();
+  const pass = document.getElementById('authPass').value;
+  if (!name || pass.length < 4) return toast('姓名必填，密码至少 4 位', 'warning');
+  try {
+    const r = await api('/register', 'POST', { name, pass });
+    setToken(r.token);
+    afterLogin(r.state);
+    toast('注册成功！', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+/* ============================================================
+ * 登录后主界面
+ * ============================================================ */
+function afterLogin(state) {
+  STATE.me = state.me;
+  STATE.items = state.items;
+  STATE.logs = state.logs;
+  STATE.requests = state.requests;
+  STATE.users = state.users || [];
+  STATE.pendingCount = state.pendingCount || 0;
+  STATE.serverTime = state.serverTime;
+  renderApp();
+}
+
+function renderApp() {
+  const role = STATE.me.role;
+  const isAdmin = role === 'admin';
+  const canIn = role === 'admin' || role === 'authorized';
+
+  const tabs = [
+    { id: 'dashboard', name: '📊 概览' },
+    { id: 'items', name: '📦 物品' },
+    ...(canIn ? [{ id: 'inbound', name: '📥 入库' }] : []),
+    { id: 'apply', name: '📤 申请' },
+    ...(isAdmin ? [{ id: 'approve', name: '✅ 审批', badge: STATE.pendingCount }] : []),
+    { id: 'logs', name: '📋 台账' },
+    { id: 'settings', name: '⚙️ 设置' },
+  ];
+
+  document.getElementById('root').innerHTML = `
+    <div class="app">
+      <div class="header">
+        <div>
+          <h1>📦 可乐菲出入库明细</h1>
+          <div class="me">当前用户：<b>${escapeHtml(STATE.me.name)}</b>
+            <span class="tag ${role === 'admin' ? 'in' : role === 'authorized' ? 'approved' : 'pending'}">${roleText(role)}</span>
+          </div>
+        </div>
+        <button class="logout" onclick="doLogout()">退出登录</button>
+      </div>
+
+      <div class="tabs" id="tabs">
+        ${tabs.map(t => `
+          <div class="tab ${STATE.tab === t.id ? 'active' : ''}" onclick="switchTab('${t.id}')">
+            ${t.name}${t.badge ? `<span class="badge">${t.badge}</span>` : ''}
+          </div>
+        `).join('')}
+      </div>
+
+      <div id="tabBody"></div>
+    </div>
+  `;
+
+  renderTab(STATE.tab);
+}
+function roleText(r) {
+  return { admin: '管理员', authorized: '授权人员', normal: '普通用户' }[r] || r;
+}
+function switchTab(id) {
+  STATE.tab = id;
+  // 重新渲染 tabs 高亮
+  document.querySelectorAll('#tabs .tab').forEach(t => t.classList.remove('active'));
+  document.querySelector(`#tabs .tab[onclick*="${id}"]`)?.classList.add('active');
+  renderTab(id);
+}
+
+function renderTab(id) {
+  const body = document.getElementById('tabBody');
+  if (!body) return;
+  if (id === 'dashboard') body.innerHTML = renderDashboard();
+  else if (id === 'items') body.innerHTML = renderItems();
+  else if (id === 'inbound') body.innerHTML = renderInbound();
+  else if (id === 'apply') body.innerHTML = renderApply();
+  else if (id === 'approve') body.innerHTML = renderApprove();
+  else if (id === 'logs') body.innerHTML = renderLogs();
+  else if (id === 'settings') body.innerHTML = renderSettings();
+}
+
+/* ============================================================
+ * 📊 概览
+ * ============================================================ */
+function renderDashboard() {
+  const items = STATE.items;
+  const total = items.length;
+  const lowStock = items.filter(i => Number(i.qty) <= Number(i.minQty) && Number(i.minQty) > 0);
+  const outStock = items.filter(i => Number(i.qty) === 0);
+  const recent = STATE.logs.slice(0, 5);
+  const pendingMine = STATE.requests.filter(r => r.applicant === STATE.me.name && r.status === 'pending');
+  const canIn = STATE.me.role === 'admin' || STATE.me.role === 'authorized';
+
+  return `
+    <div class="card">
+      <h2>📊 数据概览</h2>
+      <div class="list">
+        <div class="item-card"><div class="name">物品种类</div><div class="qty">${total}<small>件</small></div></div>
+        <div class="item-card ${lowStock.length ? 'warn' : ''}"><div class="name">库存预警</div><div class="qty">${lowStock.length}<small>件</small></div></div>
+        <div class="item-card ${outStock.length ? 'out' : ''}"><div class="name">已用完</div><div class="qty">${outStock.length}<small>件</small></div></div>
+        <div class="item-card"><div class="name">最近流水</div><div class="qty">${STATE.logs.length}<small>条</small></div></div>
+      </div>
+    </div>
+
+    ${lowStock.length ? `
+    <div class="card">
+      <h2>⚠️ 库存预警（${lowStock.length}）</h2>
+      <div class="list">
+        ${lowStock.map(it => `
+          <div class="item-card warn">
+            <div class="name">${escapeHtml(it.name)}</div>
+            <div class="meta">${escapeHtml(it.spec || '')} ${escapeHtml(it.unit)} · 预警线 ${it.minQty}</div>
+            <div class="qty">${it.qty}<small>${escapeHtml(it.unit)}</small></div>
+            ${canIn ? `<div class="btn-row"><button class="btn small" onclick="quickInbound('${it.id}')">📥 快速入库</button></div>` : ''}
+          </div>
+        `).join('')}
+      </div>
+    </div>` : ''}
+
+    <div class="card">
+      <h2>📋 最近 5 条流水</h2>
+      ${recent.length ? `
+      <div class="table-wrap"><table>
+        <thead><tr><th>时间</th><th>类型</th><th>物品</th><th>数量</th><th>操作人</th></tr></thead>
+        <tbody>${recent.map(l => `
+          <tr>
+            <td>${fmtTime(l.time)}</td>
+            <td><span class="tag ${l.type}">${typeText(l.type)}</span></td>
+            <td>${escapeHtml(l.itemName)}</td>
+            <td>${l.type === 'in' || l.type === 'init' ? '+' : '-'}${l.qty} ${escapeHtml(l.unit)}</td>
+            <td>${escapeHtml(l.person)}</td>
+          </tr>`).join('')}</tbody>
+      </table></div>` : '<div class="empty">暂无流水</div>'}
+    </div>
+
+    ${pendingMine.length ? `
+    <div class="card">
+      <h2>⏳ 我的待审批申请（${pendingMine.length}）</h2>
+      ${pendingMine.map(r => `
+        <div class="flex between" style="padding: 8px 0; border-bottom: 1px solid var(--border);">
+          <div><span class="tag ${r.type}">${typeText(r.type)}</span> ${escapeHtml(r.itemName)} × ${r.qty}</div>
+          <button class="btn small danger" onclick="cancelReq('${r.id}')">撤回</button>
+        </div>
+      `).join('')}
+    </div>` : ''}
+  `;
+}
+
+function typeText(t) {
+  return { in: '入库', out: '出库', damage: '报损', init: '建档', buy: '采买' }[t] || t;
+}
+
+/* ============================================================
+ * 📦 物品
+ * ============================================================ */
+function renderItems() {
+  const canIn = STATE.me.role === 'admin' || STATE.me.role === 'authorized';
+  return `
+    <div class="card">
+      <div class="flex between">
+        <h2>📦 物品清单（${STATE.items.length}）</h2>
+        ${canIn ? `<button class="btn" onclick="showAddItem()">➕ 新增物品</button>` : ''}
+      </div>
+      <div class="row">
+        <input id="itemSearch" placeholder="搜索物品名称..." oninput="filterItems()" style="max-width: 280px;">
+      </div>
+      <div id="itemsList">
+        ${renderItemsList(STATE.items)}
+      </div>
+    </div>
+  `;
+}
+function renderItemsList(items) {
+  if (!items.length) return '<div class="empty">暂无物品</div>';
+  return `<div class="list">
+    ${items.map(it => {
+      const low = Number(it.qty) <= Number(it.minQty);
+      const out = Number(it.qty) === 0;
+      return `<div class="item-card ${out ? 'out' : low ? 'warn' : ''}">
+        <div class="name">${escapeHtml(it.name)} <small class="text-light">${escapeHtml(it.code)}</small></div>
+        <div class="meta">${escapeHtml(it.spec || '')} · 预警线 ${it.minQty} ${escapeHtml(it.unit)}</div>
+        <div class="qty">${it.qty}<small>${escapeHtml(it.unit)}</small></div>
+        ${canEdit() ? `<div class="btn-row">
+          <button class="btn small" onclick="showEditItem('${it.id}')">✏️ 编辑</button>
+          ${STATE.me.role === 'admin' ? `<button class="btn small danger" onclick="delItem('${it.id}')">删除</button>` : ''}
+        </div>` : ''}
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+function canEdit() { return STATE.me.role === 'admin' || STATE.me.role === 'authorized'; }
+function filterItems() {
+  const q = document.getElementById('itemSearch').value.trim().toLowerCase();
+  const filtered = q ? STATE.items.filter(i =>
+    i.name.toLowerCase().includes(q) || (i.spec || '').toLowerCase().includes(q)
+  ) : STATE.items;
+  document.getElementById('itemsList').innerHTML = renderItemsList(filtered);
+}
+
+function showAddItem() {
+  const m = modal(`
+    <h3>➕ 新增物品</h3>
+    <div class="row"><label>物品名称</label><input id="f_name" placeholder="如：双面胶"></div>
+    <div class="row"><label>规格</label><input id="f_spec" placeholder="如：宽 4cm"></div>
+    <div class="row"><label>分类</label><input id="f_cat" placeholder="如：胶棒/水彩/彩纸"></div>
+    <div class="row"><label>单位</label><input id="f_unit" value="件"></div>
+    <div class="row"><label>期初数量</label><input id="f_init" type="number" min="0" value="0"></div>
+    <div class="row"><label>预警线</label><input id="f_min" type="number" min="0" value="0"></div>
+    <div class="btn-row">
+      <button class="btn ghost" onclick="this.closest('.modal-bg').remove()">取消</button>
+      <button class="btn" onclick="addItem()">保存</button>
+    </div>
+  `);
+  setTimeout(() => document.getElementById('f_name')?.focus(), 100);
+}
+async function addItem() {
+  const data = {
+    action: 'add',
+    name: document.getElementById('f_name').value.trim(),
+    spec: document.getElementById('f_spec').value.trim(),
+    category: document.getElementById('f_cat').value.trim(),
+    unit: document.getElementById('f_unit').value.trim() || '件',
+    initQty: Number(document.getElementById('f_init').value) || 0,
+    minQty: Number(document.getElementById('f_min').value) || 0,
+  };
+  if (!data.name) return toast('请填写物品名称', 'warning');
+  try {
+    await api('/items', 'POST', data);
+    document.querySelector('.modal-bg').remove();
+    toast('物品已添加', 'success');
+    await refreshState();
+    renderTab(STATE.tab);
+  } catch (e) { toast(e.message, 'error'); }
+}
+function showEditItem(id) {
+  const it = STATE.items.find(x => x.id === id);
+  if (!it) return;
+  modal(`
+    <h3>✏️ 编辑物品</h3>
+    <div class="row"><label>名称</label><input id="f_name" value="${escapeHtml(it.name)}"></div>
+    <div class="row"><label>规格</label><input id="f_spec" value="${escapeHtml(it.spec || '')}"></div>
+    <div class="row"><label>分类</label><input id="f_cat" value="${escapeHtml(it.category || '')}"></div>
+    <div class="row"><label>单位</label><input id="f_unit" value="${escapeHtml(it.unit)}"></div>
+    <div class="row"><label>预警线</label><input id="f_min" type="number" min="0" value="${it.minQty}"></div>
+    <div class="text-light">当前库存：${it.qty} ${escapeHtml(it.unit)}（要改库存请走"入库"流程）</div>
+    <div class="btn-row">
+      <button class="btn ghost" onclick="this.closest('.modal-bg').remove()">取消</button>
+      <button class="btn" onclick="editItem('${id}')">保存</button>
+    </div>
+  `);
+}
+async function editItem(id) {
+  const data = {
+    action: 'update', id,
+    name: document.getElementById('f_name').value.trim(),
+    spec: document.getElementById('f_spec').value.trim(),
+    category: document.getElementById('f_cat').value.trim(),
+    unit: document.getElementById('f_unit').value.trim(),
+    minQty: Number(document.getElementById('f_min').value) || 0,
+  };
+  try {
+    await api('/items', 'POST', data);
+    document.querySelector('.modal-bg').remove();
+    toast('已保存', 'success');
+    await refreshState();
+    renderTab(STATE.tab);
+  } catch (e) { toast(e.message, 'error'); }
+}
+async function delItem(id) {
+  if (!confirm('确定删除该物品？相关日志会保留。')) return;
+  try {
+    await api('/items', 'POST', { action: 'delete', id });
+    toast('已删除', 'success');
+    await refreshState();
+    renderTab(STATE.tab);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+/* ============================================================
+ * 📥 入库
+ * ============================================================ */
+function renderInbound() {
+  const opts = STATE.items.map(it =>
+    `<option value="${it.id}">${escapeHtml(it.name)} (${escapeHtml(it.spec || '')}) · 现 ${it.qty} ${escapeHtml(it.unit)}</option>`
+  ).join('');
+  return `
+    <div class="card">
+      <h2>📥 直接入库（无需审批）</h2>
+      <div class="text-light mb">入库会立即增加数量并记录流水。仅管理员和授权人员可操作。</div>
+      <div class="row"><label>物品</label>
+        <select id="in_item">${opts}</select>
+      </div>
+      <div class="row"><label>数量</label><input id="in_qty" type="number" min="0.01" step="0.01" placeholder="如：10"></div>
+      <div class="row"><label>备注</label><input id="in_remark" placeholder="选填，如：淘宝购入"></div>
+      <div class="btn-row"><button class="btn success" onclick="doInbound()">✓ 确认入库</button></div>
+    </div>
+  `;
+}
+async function doInbound() {
+  const data = {
+    itemId: document.getElementById('in_item').value,
+    qty: Number(document.getElementById('in_qty').value),
+    remark: document.getElementById('in_remark').value.trim(),
+  };
+  if (!data.qty || data.qty <= 0) return toast('请填写入库数量', 'warning');
+  try {
+    const r = await api('/inbound', 'POST', data);
+    toast(`入库成功！${r.name} 从 ${r.before} → ${r.after} ${r.unit}`, 'success');
+    await refreshState();
+    renderTab(STATE.tab);
+  } catch (e) { toast(e.message, 'error'); }
+}
+function quickInbound(id) {
+  switchTab('inbound');
+  setTimeout(() => {
+    const sel = document.getElementById('in_item');
+    if (sel) {
+      sel.value = id;
+      document.getElementById('in_qty')?.focus();
+    }
+  }, 100);
+}
+
+/* ============================================================
+ * 📤 申请（出库/报损/采买）
+ * ============================================================ */
+function renderApply() {
+  const myReq = STATE.requests.filter(r => r.applicant === STATE.me.name);
+  const itemOpts = STATE.items.map(it =>
+    `<option value="${it.id}">${escapeHtml(it.name)} · 现 ${it.qty} ${escapeHtml(it.unit)}</option>`
+  ).join('');
+  return `
+    <div class="card">
+      <h2>📤 提交申请</h2>
+      <div class="row"><label>类型</label>
+        <select id="ap_type" onchange="toggleApplyForm()">
+          <option value="out">出库</option>
+          <option value="damage">报损</option>
+          <option value="buy">采买</option>
+        </select>
+      </div>
+      <div id="applyFormItem">
+        <div class="row"><label>物品</label><select id="ap_item">${itemOpts}</select></div>
+      </div>
+      <div id="applyFormBuy" style="display:none">
+        <div class="row"><label>物品名</label><input id="ap_buy_name" placeholder="新物品名"></div>
+        <div class="row"><label>规格</label><input id="ap_buy_spec" placeholder="选填"></div>
+        <div class="row"><label>单位</label><input id="ap_buy_unit" value="件"></div>
+      </div>
+      <div class="row"><label>数量</label><input id="ap_qty" type="number" min="0.01" step="0.01"></div>
+      <div class="row"><label>原因</label><textarea id="ap_reason" rows="2" placeholder="如：交给小班上课用"></textarea></div>
+      <div class="btn-row"><button class="btn" onclick="submitApply()">提交申请</button></div>
+      <div class="text-light mt">提交后等管理员审批。出库/报损批准后立即扣库存；采买批准后由管理员入库。</div>
+    </div>
+
+    <div class="card">
+      <h2>📋 我的申请记录</h2>
+      ${myReq.length ? `
+      <div class="table-wrap"><table>
+        <thead><tr><th>时间</th><th>类型</th><th>物品</th><th>数量</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody>${myReq.map(r => `
+          <tr>
+            <td>${fmtTime(r.time)}</td>
+            <td><span class="tag ${r.type}">${typeText(r.type)}</span></td>
+            <td>${escapeHtml(r.itemName)}</td>
+            <td>${r.qty} ${escapeHtml(r.unit)}</td>
+            <td><span class="tag ${r.status}">${statusText(r.status)}</span></td>
+            <td>${r.status === 'pending' ? `<button class="btn small danger" onclick="cancelReq('${r.id}')">撤回</button>` : ''}</td>
+          </tr>
+        `).join('')}</tbody>
+      </table></div>` : '<div class="empty">暂无申请</div>'}
+    </div>
+  `;
+}
+function statusText(s) {
+  return { pending: '待审批', approved: '已批准', rejected: '已驳回', done: '已完成' }[s] || s;
+}
+function toggleApplyForm() {
+  const t = document.getElementById('ap_type').value;
+  document.getElementById('applyFormItem').style.display = (t === 'buy') ? 'none' : '';
+  document.getElementById('applyFormBuy').style.display = (t === 'buy') ? '' : 'none';
+}
+async function submitApply() {
+  const type = document.getElementById('ap_type').value;
+  const qty = Number(document.getElementById('ap_qty').value);
+  const reason = document.getElementById('ap_reason').value.trim();
+  if (!qty || qty <= 0) return toast('请填写数量', 'warning');
+  try {
+    if (type === 'buy') {
+      const name = document.getElementById('ap_buy_name').value.trim();
+      if (!name) return toast('请填写采买物品名', 'warning');
+      await api('/buy', 'POST', {
+        itemName: name,
+        spec: document.getElementById('ap_buy_spec').value.trim(),
+        unit: document.getElementById('ap_buy_unit').value.trim(),
+        qty, reason,
+      });
+    } else {
+      await api('/req', 'POST', {
+        type,
+        itemId: document.getElementById('ap_item').value,
+        qty, reason,
+      });
+    }
+    toast('申请已提交，等管理员审批', 'success');
+    document.getElementById('ap_qty').value = '';
+    document.getElementById('ap_reason').value = '';
+    await refreshState();
+    renderTab(STATE.tab);
+  } catch (e) { toast(e.message, 'error'); }
+}
+async function cancelReq(id) {
+  if (!confirm('撤回这条申请？')) return;
+  try {
+    await api('/cancelreq', 'POST', { id });
+    toast('已撤回', 'success');
+    await refreshState();
+    renderTab(STATE.tab);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+/* ============================================================
+ * ✅ 审批（仅管理员）
+ * ============================================================ */
+function renderApprove() {
+  if (STATE.me.role !== 'admin') {
+    return '<div class="card"><div class="empty">仅管理员可访问</div></div>';
+  }
+  const pending = STATE.requests.filter(r => r.status === 'pending');
+  const approved = STATE.requests.filter(r => r.status === 'approved' && r.type === 'buy');
+  const recent = STATE.requests.filter(r => r.status !== 'pending').slice(0, 10);
+  return `
+    <div class="card">
+      <h2>⏳ 待审批（${pending.length}）</h2>
+      ${pending.length ? pending.map(r => `
+        <div style="padding: 12px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px;">
+          <div class="flex between mb">
+            <div><span class="tag ${r.type}">${typeText(r.type)}</span> <b>${escapeHtml(r.itemName)}</b> × ${r.qty} ${escapeHtml(r.unit)}</div>
+            <div class="text-light">${fmtTime(r.time)}</div>
+          </div>
+          <div class="text-light mb">申请人：<b>${escapeHtml(r.applicant)}</b> · 原因：${escapeHtml(r.reason || '无')}</div>
+          ${r.type !== 'buy' && r.currentQty != null ? `<div class="text-light mb">当前库存：${r.currentQty} ${escapeHtml(r.unit)}</div>` : ''}
+          <div class="btn-row">
+            <button class="btn success" onclick="approveReq('${r.id}', 'approve')">✓ 批准</button>
+            <button class="btn danger" onclick="approveReq('${r.id}', 'reject')">✕ 驳回</button>
+          </div>
+        </div>
+      `).join('') : '<div class="empty">暂无待审批申请</div>'}
+    </div>
+
+    ${approved.length ? `
+    <div class="card">
+      <h2>🛒 待采买入库（${approved.length}）</h2>
+      ${approved.map(r => `
+        <div style="padding: 12px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px;">
+          <div class="flex between mb">
+            <div><span class="tag buy">采买</span> <b>${escapeHtml(r.itemName)}</b> × ${r.qty} ${escapeHtml(r.unit)}</div>
+            <div class="text-light">${fmtTime(r.approveTime)}</div>
+          </div>
+          <div class="text-light mb">申请人：${escapeHtml(r.applicant)} · 原因：${escapeHtml(r.reason || '无')}</div>
+          <div class="btn-row">
+            <button class="btn success" onclick="buyDone('${r.id}')">✓ 到货入库</button>
+          </div>
+        </div>
+      `).join('')}
+    </div>` : ''}
+
+    ${recent.length ? `
+    <div class="card">
+      <h2>📜 最近处理记录</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>时间</th><th>类型</th><th>物品</th><th>状态</th><th>处理人</th></tr></thead>
+        <tbody>${recent.map(r => `
+          <tr>
+            <td>${fmtTime(r.time)}</td>
+            <td><span class="tag ${r.type}">${typeText(r.type)}</span></td>
+            <td>${escapeHtml(r.itemName)}</td>
+            <td><span class="tag ${r.status}">${statusText(r.status)}</span></td>
+            <td>${escapeHtml(r.approver || '-')}</td>
+          </tr>
+        `).join('')}</tbody>
+      </table></div>
+    </div>` : ''}
+  `;
+}
+async function approveReq(id, action) {
+  let note = '';
+  if (action === 'reject') {
+    note = prompt('驳回原因（可空）：') || '';
+  }
+  try {
+    await api('/approve', 'POST', { id, action, note });
+    toast(action === 'approve' ? '已批准' : '已驳回', 'success');
+    await refreshState();
+    renderTab(STATE.tab);
+  } catch (e) { toast(e.message, 'error'); }
+}
+async function buyDone(id) {
+  const r = STATE.requests.find(x => x.id === id);
+  if (!r) return;
+  // 选择入库方式
+  const itemOpts = STATE.items.map(it =>
+    `<option value="${it.id}">${escapeHtml(it.name)} · 现 ${it.qty} ${escapeHtml(it.unit)}</option>`
+  ).join('');
+  modal(`
+    <h3>🛒 采买入库</h3>
+    <div class="text-light mb">采买：${escapeHtml(r.itemName)} × ${r.qty} ${escapeHtml(r.unit)}（申请人：${escapeHtml(r.applicant)}）</div>
+    <div class="row"><label>入库方式</label>
+      <select id="bd_mode" onchange="toggleBuyDoneMode()">
+        <option value="existing">入库到现有物品</option>
+        <option value="new">作为新物品入库</option>
+      </select>
+    </div>
+    <div id="bd_existing">
+      <div class="row"><label>选择物品</label><select id="bd_item">${itemOpts}</select></div>
+    </div>
+    <div id="bd_new" style="display:none">
+      <div class="row"><label>新物品名</label><input id="bd_new_name" value="${escapeHtml(r.itemName)}"></div>
+      <div class="row"><label>规格</label><input id="bd_new_spec" value="${escapeHtml(r.spec || '')}"></div>
+      <div class="row"><label>单位</label><input id="bd_new_unit" value="${escapeHtml(r.unit)}"></div>
+      <div class="row"><label>预警线</label><input id="bd_new_min" type="number" min="0" value="0"></div>
+    </div>
+    <div class="row"><label>实际入库数</label><input id="bd_qty" type="number" min="0.01" value="${r.qty}"></div>
+    <div class="btn-row">
+      <button class="btn ghost" onclick="this.closest('.modal-bg').remove()">取消</button>
+      <button class="btn success" onclick="submitBuyDone('${id}')">✓ 入库</button>
+    </div>
+  `);
+}
+function toggleBuyDoneMode() {
+  const m = document.getElementById('bd_mode').value;
+  document.getElementById('bd_existing').style.display = (m === 'existing') ? '' : 'none';
+  document.getElementById('bd_new').style.display = (m === 'new') ? '' : 'none';
+}
+async function submitBuyDone(id) {
+  const mode = document.getElementById('bd_mode').value;
+  const qty = Number(document.getElementById('bd_qty').value);
+  if (!qty || qty <= 0) return toast('请填写入库数量', 'warning');
+  const data = { id, mode, qty };
+  if (mode === 'existing') {
+    data.itemId = document.getElementById('bd_item').value;
+  } else {
+    data.newName = document.getElementById('bd_new_name').value.trim();
+    data.spec = document.getElementById('bd_new_spec').value.trim();
+    data.unit = document.getElementById('bd_new_unit').value.trim();
+    data.minQty = Number(document.getElementById('bd_new_min').value) || 0;
+    if (!data.newName) return toast('请填写新物品名', 'warning');
+  }
+  try {
+    await api('/buydone', 'POST', data);
+    document.querySelector('.modal-bg').remove();
+    toast('入库成功', 'success');
+    await refreshState();
+    renderTab(STATE.tab);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+/* ============================================================
+ * 📋 台账
+ * ============================================================ */
+function renderLogs() {
+  return `
+    <div class="card">
+      <h2>📋 出入库台账</h2>
+      <div class="row">
+        <label>类型</label>
+        <select id="lg_type" onchange="filterLogs()">
+          <option value="">全部</option>
+          <option value="in">入库</option>
+          <option value="out">出库</option>
+          <option value="damage">报损</option>
+          <option value="init">建档</option>
+        </select>
+        <label>物品</label>
+        <input id="lg_item" placeholder="搜索物品..." oninput="filterLogs()" style="max-width:200px">
+        <label>操作人</label>
+        <input id="lg_person" placeholder="搜索操作人..." oninput="filterLogs()" style="max-width:160px">
+      </div>
+      <div id="logsList"></div>
+    </div>
+  `;
+}
+function filterLogs() {
+  const t = document.getElementById('lg_type').value;
+  const i = document.getElementById('lg_item').value.trim().toLowerCase();
+  const p = document.getElementById('lg_person').value.trim().toLowerCase();
+  const filtered = STATE.logs.filter(l =>
+    (!t || l.type === t) &&
+    (!i || l.itemName.toLowerCase().includes(i)) &&
+    (!p || l.person.toLowerCase().includes(p))
+  );
+  const el = document.getElementById('logsList');
+  if (!filtered.length) { el.innerHTML = '<div class="empty">无匹配流水</div>'; return; }
+  el.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>时间</th><th>类型</th><th>物品</th><th>规格</th><th>数量</th><th>变动</th><th>操作人</th><th>备注</th></tr></thead>
+    <tbody>${filtered.map(l => `
+      <tr>
+        <td>${fmtTime(l.time)}</td>
+        <td><span class="tag ${l.type}">${typeText(l.type)}</span></td>
+        <td>${escapeHtml(l.itemName)}</td>
+        <td class="text-light">${escapeHtml(l.spec || '')}</td>
+        <td>${l.qty} ${escapeHtml(l.unit)}</td>
+        <td>${l.before} → ${l.after}</td>
+        <td>${escapeHtml(l.person)}</td>
+        <td class="text-light">${escapeHtml(l.remark || '')}</td>
+      </tr>
+    `).join('')}</tbody>
+  </table></div>
+  <div class="btn-row mt"><button class="btn ghost" onclick="exportCsv()">📥 导出 CSV</button></div>`;
+}
+function exportCsv() {
+  const t = document.getElementById('lg_type').value;
+  const i = document.getElementById('lg_item').value.trim().toLowerCase();
+  const p = document.getElementById('lg_person').value.trim().toLowerCase();
+  const rows = [['时间', '类型', '物品', '规格', '单位', '变动前', '数量', '变动后', '操作人', '备注']];
+  STATE.logs.filter(l =>
+    (!t || l.type === t) &&
+    (!i || l.itemName.toLowerCase().includes(i)) &&
+    (!p || l.person.toLowerCase().includes(p))
+  ).forEach(l => {
+    rows.push([l.time, typeText(l.type), l.itemName, l.spec || '', l.unit || '',
+      l.before, l.qty, l.after, l.person, l.remark || '']);
+  });
+  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `台账-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click(); URL.revokeObjectURL(url);
+  toast('已导出 CSV', 'success');
+}
+
+/* ============================================================
+ * ⚙️ 设置
+ * ============================================================ */
+function renderSettings() {
+  const isAdmin = STATE.me.role === 'admin';
+  return `
+    <div class="card">
+      <h2>👤 账号信息</h2>
+      <div class="row"><label>姓名</label><input value="${escapeHtml(STATE.me.name)}" disabled></div>
+      <div class="row"><label>角色</label><input value="${roleText(STATE.me.role)}" disabled></div>
+      <div class="btn-row"><button class="btn" onclick="showChangePass()">🔑 修改密码</button></div>
+    </div>
+
+    ${isAdmin ? `
+    <div class="card">
+      <h2>👥 用户管理</h2>
+      <div class="btn-row mb"><button class="btn" onclick="showAddUser()">➕ 添加用户</button></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>姓名</th><th>角色</th><th>创建日期</th><th>操作</th></tr></thead>
+        <tbody>${STATE.users.map(u => `
+          <tr>
+            <td>${escapeHtml(u.name)} ${u.id === STATE.me.id ? '<span class="text-light">(我)</span>' : ''}</td>
+            <td><span class="tag ${u.role === 'admin' ? 'in' : u.role === 'authorized' ? 'approved' : 'pending'}">${roleText(u.role)}</span></td>
+            <td class="text-light">${u.createdAt}</td>
+            <td>
+              ${u.id !== STATE.me.id ? `
+                <button class="btn small" onclick="showUserAction('${u.id}')">⚙️ 管理</button>
+              ` : ''}
+            </td>
+          </tr>
+        `).join('')}</tbody>
+      </table></div>
+    </div>` : ''}
+
+    ${isAdmin ? `
+    <div class="card">
+      <h2>💾 备份与恢复</h2>
+      <div class="text-light mb">每周建议下载一份 JSON 备份到本地。即使服务器数据丢失，也能一键恢复。</div>
+      <div class="btn-row">
+        <button class="btn" onclick="downloadBackup()">📥 下载备份</button>
+        <button class="btn ghost" onclick="document.getElementById('restoreFile').click()">📤 从备份恢复</button>
+        <input type="file" id="restoreFile" accept=".json" style="display:none" onchange="restoreBackup(this)">
+      </div>
+    </div>` : ''}
+
+    <div class="card">
+      <h2>🔍 诊断信息</h2>
+      <div id="diagBox" class="diag-box">点击下方按钮加载诊断信息...</div>
+      <div class="btn-row">
+        <button class="btn ghost" onclick="loadDiag()">🔄 刷新诊断</button>
+        <button class="btn ghost" onclick="copyDiag()">📋 复制</button>
+      </div>
+    </div>
+  `;
+}
+function showChangePass() {
+  modal(`
+    <h3>🔑 修改密码</h3>
+    <div class="row"><label>原密码</label><input id="cp_old" type="password"></div>
+    <div class="row"><label>新密码</label><input id="cp_new" type="password" placeholder="至少 4 位"></div>
+    <div class="btn-row">
+      <button class="btn ghost" onclick="this.closest('.modal-bg').remove()">取消</button>
+      <button class="btn" onclick="changePass()">提交</button>
+    </div>
+  `);
+}
+async function changePass() {
+  const oldPass = document.getElementById('cp_old').value;
+  const newPass = document.getElementById('cp_new').value;
+  if (!oldPass || newPass.length < 4) return toast('请填写完整', 'warning');
+  try {
+    await api('/changepass', 'POST', { oldPass, newPass });
+    document.querySelector('.modal-bg').remove();
+    toast('密码已修改，请重新登录', 'success');
+    setTimeout(() => doLogout(), 1000);
+  } catch (e) { toast(e.message, 'error'); }
+}
+function showAddUser() {
+  modal(`
+    <h3>➕ 添加用户</h3>
+    <div class="row"><label>姓名</label><input id="au_name" placeholder="如：王老师"></div>
+    <div class="row"><label>密码</label><input id="au_pass" type="password" placeholder="至少 4 位"></div>
+    <div class="row"><label>角色</label>
+      <select id="au_role">
+        <option value="normal">普通用户（只能看自己）</option>
+        <option value="authorized">授权人员（可入库）</option>
+        <option value="admin">管理员（全部权限）</option>
+      </select>
+    </div>
+    <div class="btn-row">
+      <button class="btn ghost" onclick="this.closest('.modal-bg').remove()">取消</button>
+      <button class="btn" onclick="addUser()">添加</button>
+    </div>
+  `);
+}
+async function addUser() {
+  const data = {
+    action: 'add',
+    name: document.getElementById('au_name').value.trim(),
+    pass: document.getElementById('au_pass').value,
+    role: document.getElementById('au_role').value,
+  };
+  if (!data.name || data.pass.length < 4) return toast('请填写完整', 'warning');
+  try {
+    await api('/users', 'POST', data);
+    document.querySelector('.modal-bg').remove();
+    toast('已添加', 'success');
+    await refreshState();
+    renderTab(STATE.tab);
+  } catch (e) { toast(e.message, 'error'); }
+}
+function showUserAction(userId) {
+  const u = STATE.users.find(x => x.id === userId);
+  if (!u) return;
+  modal(`
+    <h3>⚙️ 管理用户：${escapeHtml(u.name)}</h3>
+    <div class="row"><label>角色</label>
+      <select id="ua_role">
+        <option value="normal" ${u.role === 'normal' ? 'selected' : ''}>普通用户</option>
+        <option value="authorized" ${u.role === 'authorized' ? 'selected' : ''}>授权人员</option>
+        <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>管理员</option>
+      </select>
+    </div>
+    <div class="btn-row">
+      <button class="btn ghost" onclick="this.closest('.modal-bg').remove()">取消</button>
+      <button class="btn" onclick="changeRole('${userId}')">保存角色</button>
+    </div>
+    <h3 class="mt">重置密码</h3>
+    <div class="row"><label>新密码</label><input id="ua_pass" placeholder="至少 4 位"></div>
+    <div class="btn-row">
+      <button class="btn warning" onclick="resetPass('${userId}')">重置密码</button>
+    </div>
+    <h3 class="mt">删除用户</h3>
+    <div class="text-light mb">删除后该用户所有申请记录会保留，但无法登录。</div>
+    <div class="btn-row">
+      <button class="btn danger" onclick="deleteUser('${userId}')">🗑 删除</button>
+    </div>
+  `);
+}
+async function changeRole(userId) {
+  const role = document.getElementById('ua_role').value;
+  try {
+    await api('/users', 'POST', { action: 'role', userId, role });
+    document.querySelector('.modal-bg').remove();
+    toast('角色已修改', 'success');
+    await refreshState();
+    renderTab(STATE.tab);
+  } catch (e) { toast(e.message, 'error'); }
+}
+async function resetPass(userId) {
+  const pass = document.getElementById('ua_pass').value;
+  if (pass.length < 4) return toast('密码至少 4 位', 'warning');
+  try {
+    await api('/users', 'POST', { action: 'resetpass', userId, pass });
+    document.querySelector('.modal-bg').remove();
+    toast('密码已重置', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+}
+async function deleteUser(userId) {
+  if (!confirm('确定删除该用户？')) return;
+  try {
+    await api('/users', 'POST', { action: 'delete', userId });
+    document.querySelector('.modal-bg').remove();
+    toast('已删除', 'success');
+    await refreshState();
+    renderTab(STATE.tab);
+  } catch (e) { toast(e.message, 'error'); }
+}
+async function downloadBackup() {
+  try {
+    const r = await fetch(API + '/backup', { headers: { Authorization: 'Bearer ' + TOKEN } });
+    if (!r.ok) throw new Error('下载失败');
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `keleifei-backup-${new Date().toISOString().slice(0,10)}.json`;
+    a.click(); URL.revokeObjectURL(url);
+    toast('备份已下载', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+}
+async function restoreBackup(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (!confirm('恢复将覆盖所有现有数据，确定？')) { input.value = ''; return; }
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    await api('/restore', 'POST', { data });
+    toast('恢复成功！', 'success');
+    input.value = '';
+    await refreshState();
+    setTimeout(() => location.reload(), 1000);
+  } catch (e) { toast(e.message, 'error'); input.value = ''; }
+}
+async function loadDiag() {
+  const el = document.getElementById('diagBox');
+  el.textContent = '加载中...';
+  try {
+    const r = await api('/diag');
+    el.textContent = JSON.stringify(r, null, 2);
+  } catch (e) {
+    el.textContent = '加载失败：' + e.message;
+  }
+}
+function copyDiag() {
+  const text = document.getElementById('diagBox').textContent;
+  navigator.clipboard?.writeText(text).then(() => toast('已复制', 'success')).catch(() => toast('复制失败', 'error'));
+}
+
+/* ============================================================
+ * 退出登录
+ * ============================================================ */
+async function doLogout() {
+  try { await api('/logout', 'POST'); } catch (e) {}
+  setToken('');
+  STATE.me = null;
+  bootstrap();
+}
+
+/* ============================================================
+ * 刷新数据
+ * ============================================================ */
+async function refreshState() {
+  try {
+    const r = await api('/state');
+    afterLogin(r.state);
+  } catch (e) {
+    if (e.code === 401) { setToken(''); bootstrap(); }
+    else toast('刷新失败：' + e.message, 'error');
+  }
+}
+
+// 启动
+bootstrap();
+</script>
+</body>
+</html>
