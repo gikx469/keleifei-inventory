@@ -345,38 +345,6 @@ async function uploadPhoto(dataUrl) {
   const r = await api('/upload', 'POST', { data: dataUrl });
   return r.path;
 }
-// 申请行：拍照选择回调（input type=file onchange）
-async function onApplyPhoto(input) {
-  const row = input.closest('.batch-row');
-  const box = row ? row.querySelector('.photo-box') : null;
-  if (!box) return;
-  const file = input.files && input.files[0];
-  if (!file) return;
-  const btn = box.querySelector('.photo-btn');
-  try {
-    btn.textContent = '⏳ 压缩中…';
-    const dataUrl = await compressImage(file);
-    // 本地预览先存 dataset，提交时才上传
-    box.dataset.photoData = dataUrl;
-    box.dataset.photoPath = '';
-    let pv = box.querySelector('.photo-preview');
-    if (!pv) {
-      pv = document.createElement('img');
-      pv.className = 'photo-preview';
-      box.appendChild(pv);
-    }
-    pv.src = dataUrl;
-    pv.onclick = () => viewDataUrl(dataUrl);
-    btn.classList.add('has');
-    btn.innerHTML = '✓ 已拍照，点重新拍摄';
-  } catch (e) {
-    toast(e.message || '照片处理失败', 'error');
-    btn.innerHTML = '📷 拍摄旧物品照片（必填）';
-  } finally {
-    input.value = '';
-  }
-}
-
 /* ============================================================
  * 全局状态
  * ============================================================ */
@@ -1050,7 +1018,7 @@ function renderApply() {
 // 批量申请行 HTML
 function applyRowHtml(idx, type, isFirst) {
   const itemOpts = STATE.items.map(it =>
-    `<option value="${it.id}" data-nd="${it.needDamage ? '1' : ''}">${escapeHtml(it.name)}${it.needDamage ? ' 📸' : ''} · 现 ${it.qty} ${escapeHtml(it.unit)}</option>`
+    `<option value="${it.id}">${escapeHtml(it.name)}${it.needDamage ? '（需报损）' : ''} · 现 ${it.qty} ${escapeHtml(it.unit)}</option>`
   ).join('');
   // type: 'out' | 'damage' | 'buy'
   const isBuy = type === 'buy';
@@ -1059,7 +1027,7 @@ function applyRowHtml(idx, type, isFirst) {
       <span class="idx">#${idx + 1}</span>
       <div class="field-row" style="display:${isBuy ? 'none' : 'flex'}">
         <label>物品</label>
-        <select class="ap_item" onchange="onApplyItemChange(this)"><option value="">-- 请选择 --</option>${itemOpts}</select>
+        <select class="ap_item"><option value="">-- 请选择 --</option>${itemOpts}</select>
       </div>
       <div class="field-row" style="display:${isBuy ? 'flex' : 'none'}">
         <label>物品名</label>
@@ -1077,14 +1045,6 @@ function applyRowHtml(idx, type, isFirst) {
         <label>数量</label>
         <input class="ap_qty" type="number" min="0.01" step="0.01" placeholder="如：5">
       </div>
-      <div class="field-row ap_photo_row" style="display:none">
-        <label>旧物照片 <span class="damage-tag" style="margin-left:0">必拍</span></label>
-        <div class="photo-box" data-photo-data="" data-photo-path="">
-          <label class="photo-btn">📷 拍摄旧物品照片（必填）
-            <input type="file" accept="image/*" capture="environment" style="display:none" onchange="onApplyPhoto(this)">
-          </label>
-        </div>
-      </div>
       <div class="field-row">
         <label>原因<span class="optional-tag">选填</span></label>
         <input class="ap_reason" placeholder="如：小班上课用">
@@ -1092,15 +1052,6 @@ function applyRowHtml(idx, type, isFirst) {
       ${isFirst ? '' : `<button type="button" class="del" onclick="removeApplyRow(this)">✕ 删除此行</button>`}
     </div>
   `;
-}
-// 申请行选择物品后：需要报损的物品 → 展开拍照字段
-function onApplyItemChange(sel) {
-  const row = sel.closest('.batch-row');
-  if (!row) return;
-  const opt = sel.options[sel.selectedIndex];
-  const need = !!(opt && opt.dataset.nd === '1');
-  const fr = row.querySelector('.ap_photo_row');
-  if (fr) fr.style.display = need ? 'flex' : 'none';
 }
 function switchApplyType() {
   const t = document.getElementById('ap_type').value;
@@ -1115,12 +1066,6 @@ function switchApplyType() {
     setDisp(r, '.ap_buy_name', isBuy ? '' : 'none');
     setDisp(r, '.ap_buy_spec', isBuy ? '' : 'none');
     setDisp(r, '.ap_buy_unit', isBuy ? '' : 'none');
-    // 照片行：仅出库/报损且物品需报损时显示
-    const photoFr = r.querySelector('.ap_photo_row');
-    if (photoFr) {
-      if (isBuy) { photoFr.style.display = 'none'; }
-      else { const itemSel = r.querySelector('.ap_item'); if (itemSel) onApplyItemChange(itemSel); }
-    }
   });
 }
 function addApplyRow() {
@@ -1192,26 +1137,7 @@ async function submitApply() {
         row.querySelector('.ap_item').focus();
         return toast('请选择物品', 'warning');
       }
-      // 需要报损的物品：必须已拍照
-      const opt = row.querySelector('.ap_item').options[row.querySelector('.ap_item').selectedIndex];
-      const need = !!(opt && opt.dataset.nd === '1');
-      let photo = '';
-      if (need) {
-        const box = row.querySelector('.photo-box');
-        if (!box || !box.dataset.photoData) {
-          const pb = row.querySelector('.photo-btn');
-          if (pb) pb.focus();
-          return toast('该物品需要报损，请先拍摄旧物品照片', 'warning');
-        }
-        // 上传照片
-        try {
-          toast('正在上传照片…', '');
-          photo = await uploadPhoto(box.dataset.photoData);
-        } catch (e) {
-          return toast('照片上传失败：' + e.message, 'error');
-        }
-      }
-      requests.push({ type, itemId, qty, reason, photo });
+      requests.push({ type, itemId, qty, reason, photo: '' });
     }
   }
 
