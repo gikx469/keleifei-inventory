@@ -216,19 +216,21 @@ function findUserByToken(db, token) {
  * ========================================================= */
 function pubState(db, u) {
   const seeAll = canIn(u);
+  // 兜底：把任何字段统一转字符串（防止 Excel 导入的数字时间戳炸 localeCompare）
+  const S = v => (v == null ? '' : String(v));
   let logs = seeAll
     ? db.logs.slice()
     : db.logs.filter(l => l.person === u.name);
-  logs.sort((a, b) => (b.time || '').localeCompare(a.time || ''));
+  logs.sort((a, b) => S(b.time).localeCompare(S(a.time)));
   logs = logs.slice(0, 1000);
 
   let requests = seeAll
     ? db.requests.slice()
     : db.requests.filter(r => r.applicant === u.name || r.type === 'buy');
-  requests.sort((a, b) => (b.time || '').localeCompare(a.time || ''));
+  requests.sort((a, b) => S(b.time).localeCompare(S(a.time)));
   requests = requests.slice(0, 500);
 
-  const items = db.items.slice().sort((a, b) => (a.code || '').localeCompare(b.code || ''));
+  const items = db.items.slice().sort((a, b) => S(a.code).localeCompare(S(b.code)));
 
   const st = {
     me: { id: u.id, name: u.name, role: u.role },
@@ -238,8 +240,8 @@ function pubState(db, u) {
   if (isAdmin(u)) {
     st.users = db.users
       .slice()
-      .sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''))
-      .map(x => ({ id: x.id, name: x.name, role: x.role, createdAt: x.createdAt }));
+      .sort((a, b) => S(a.createdAt).localeCompare(S(b.createdAt)))
+      .map(x => ({ id: x.id, name: x.name, role: x.role, createdAt: S(x.createdAt) }));
     st.pendingCount = db.requests.filter(r => r.status === 'pending').length;
   }
   return st;
@@ -329,29 +331,6 @@ export async function onRequest(context) {
     });
   }
 
-  /* ---------- DEBUG: 列出用户（临时）---------- */
-  if (path === '/api/_debug_users' && method === 'GET') {
-    return json({ users: db.users.map(u => ({ name: u.name, role: u.role })) });
-  }
-
-  /* ---------- DEBUG: 重置密码（临时） ---------- */
-  if (path === '/api/_reset_pass' && method === 'POST') {
-    const name = String(body.name || '').trim();
-    const np = String(body.newPass || '');
-    const u = db.users.find(x => x.name === name);
-    if (!u) return json({ error: 'no user' }, 404);
-    const rec = await makePasswordRecord(np);
-    u.salt = rec.salt;
-    u.pass = rec.hash;
-    await saveDb(kv, db);
-    return json({ ok: true, name: u.name, role: u.role });
-  }
-
-  /* ---------- DEBUG: 列出详细（临时）---------- */
-  if (path === '/api/_debug_full' && method === 'GET') {
-    return json({ users: db.users });
-  }
-
   /* ---------- POST /api/setup 初始化管理员 ---------- */
   if (path === '/api/setup' && method === 'POST') {
     if (db.users.length > 0) return json({ error: '系统已初始化，请直接登录', needLogin: true }, 400);
@@ -402,7 +381,7 @@ export async function onRequest(context) {
       await saveDb(kv, db);
       return json({ token: tk, state: pubState(db, u) });
     } catch (e) {
-      return json({ error: 'login failed: ' + String(e && e.message || e), stack: String(e && e.stack || '') }, 500);
+      return json({ error: '服务器开小差了，请稍后再试' }, 500);
     }
   }
 
