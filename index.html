@@ -234,6 +234,27 @@ tr:hover td { background: #FAFBFC; }
 .batch-add:hover { background: var(--primary); color: #fff; }
 .optional-tag { display: inline-block; background: #f0f0f0; color: var(--text-light);
   font-size: 11px; padding: 0 5px; border-radius: 3px; margin-left: 4px; font-weight: 400; }
+/* 报损标记 & 拍照上传 */
+.damage-tag { display: inline-block; background: var(--pink); color: #c0506e;
+  font-size: 11px; padding: 1px 7px; border-radius: 10px; margin-left: 6px; font-weight: 400; }
+.check-row { display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+  font-size: 13px; cursor: pointer; user-select: none; }
+.check-row input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--primary); cursor: pointer; margin: 0; }
+.check-row .hint { font-size: 12px; color: var(--text-light); }
+.photo-box { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.photo-btn { display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 12px; border: 2px dashed var(--primary); border-radius: 10px;
+  background: var(--primary-light); color: var(--primary-dark); font-size: 13px;
+  cursor: pointer; width: 100%; }
+.photo-btn.has { border-style: solid; border-color: var(--success, #7cc79a); background: #eafaf0; color: #2c7a4b; }
+.photo-preview { max-width: 140px; max-height: 140px; border-radius: 10px;
+  border: 1px solid var(--border); cursor: zoom-in; object-fit: cover; }
+.photo-thumb { width: 46px; height: 46px; border-radius: 8px; border: 1px solid var(--border);
+  object-fit: cover; cursor: zoom-in; vertical-align: middle; }
+.img-viewer { position: fixed; inset: 0; background: rgba(0,0,0,.82); z-index: 9999;
+  display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
+.img-viewer img { max-width: 94vw; max-height: 92vh; border-radius: 10px; }
 </style>
 </head>
 <body>
@@ -269,6 +290,91 @@ async function api(path, method = 'GET', body = null) {
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw Object.assign(new Error(data.error || '请求失败'), { code: r.status, data });
   return data;
+}
+
+/* ============================================================
+ * 📷 照片：压缩 / 上传 / 预览
+ * ============================================================ */
+// 照片 URL（带 token 鉴权）
+function photoUrl(p) {
+  return API + '/photo?p=' + encodeURIComponent(p) + '&token=' + encodeURIComponent(TOKEN);
+}
+// 看大图
+function viewPhoto(p) {
+  const v = document.createElement('div');
+  v.className = 'img-viewer';
+  v.innerHTML = `<img src="${photoUrl(p)}" alt="照片">`;
+  v.onclick = () => v.remove();
+  document.body.appendChild(v);
+}
+// 本地预览看大图（还未上传的 dataURL）
+function viewDataUrl(u) {
+  const v = document.createElement('div');
+  v.className = 'img-viewer';
+  v.innerHTML = `<img src="${u}" alt="照片">`;
+  v.onclick = () => v.remove();
+  document.body.appendChild(v);
+}
+// 压缩图片：最长边 1280，JPEG 0.72，返回 dataURL
+function compressImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('读取照片失败'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('照片无法识别'));
+      img.onload = () => {
+        const MAX = 1280;
+        let w = img.width, h = img.height;
+        if (w > MAX || h > MAX) {
+          if (w >= h) { h = Math.round(h * MAX / w); w = MAX; }
+          else { w = Math.round(w * MAX / h); h = MAX; }
+        }
+        const cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        cv.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(cv.toDataURL('image/jpeg', 0.72));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+// 上传压缩后的照片，返回存储路径
+async function uploadPhoto(dataUrl) {
+  const r = await api('/upload', 'POST', { data: dataUrl });
+  return r.path;
+}
+// 申请行：拍照选择回调（input type=file onchange）
+async function onApplyPhoto(input) {
+  const row = input.closest('.batch-row');
+  const box = row ? row.querySelector('.photo-box') : null;
+  if (!box) return;
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const btn = box.querySelector('.photo-btn');
+  try {
+    btn.textContent = '⏳ 压缩中…';
+    const dataUrl = await compressImage(file);
+    // 本地预览先存 dataset，提交时才上传
+    box.dataset.photoData = dataUrl;
+    box.dataset.photoPath = '';
+    let pv = box.querySelector('.photo-preview');
+    if (!pv) {
+      pv = document.createElement('img');
+      pv.className = 'photo-preview';
+      box.appendChild(pv);
+    }
+    pv.src = dataUrl;
+    pv.onclick = () => viewDataUrl(dataUrl);
+    btn.classList.add('has');
+    btn.innerHTML = '✓ 已拍照，点重新拍摄';
+  } catch (e) {
+    toast(e.message || '照片处理失败', 'error');
+    btn.innerHTML = '📷 拍摄旧物品照片（必填）';
+  } finally {
+    input.value = '';
+  }
 }
 
 /* ============================================================
@@ -630,7 +736,7 @@ function renderItemsList(items) {
       const low = Number(it.qty) <= Number(it.minQty);
       const out = Number(it.qty) === 0;
       return `<div class="item-card ${out ? 'out' : low ? 'warn' : ''}">
-        <div class="name">${escapeHtml(it.name)} <small class="text-light">${escapeHtml(it.code)}</small></div>
+        <div class="name">${escapeHtml(it.name)}${it.needDamage ? '<span class="damage-tag">需报损</span>' : ''} <small class="text-light">${escapeHtml(it.code)}</small></div>
         <div class="meta">${escapeHtml(it.spec || '')} · 预警线 ${it.minQty} ${escapeHtml(it.unit)}</div>
         <div class="qty">${it.qty}<small>${escapeHtml(it.unit)}</small></div>
         ${canEdit() ? `<div class="btn-row">
@@ -659,6 +765,9 @@ function showAddItem() {
     <div class="row"><label>单位</label><input id="f_unit" value="件"></div>
     <div class="row"><label>期初数量</label><input id="f_init" type="number" min="0" value="0"></div>
     <div class="row"><label>预警线</label><input id="f_min" type="number" min="0" value="0"></div>
+    <label class="check-row"><input type="checkbox" id="f_need_damage">
+      <span>📸 需要报损 <span class="hint">出库/报损时必须拍摄旧物品照片</span></span>
+    </label>
     <div class="btn-row">
       <button class="btn ghost" onclick="this.closest('.modal-bg').remove()">取消</button>
       <button class="btn" onclick="addItem()">保存</button>
@@ -675,6 +784,7 @@ async function addItem() {
     unit: document.getElementById('f_unit').value.trim() || '件',
     initQty: Number(document.getElementById('f_init').value) || 0,
     minQty: Number(document.getElementById('f_min').value) || 0,
+    needDamage: document.getElementById('f_need_damage').checked,
   };
   if (!data.name) return toast('请填写物品名称', 'warning');
   try {
@@ -695,6 +805,9 @@ function showEditItem(id) {
     <div class="row"><label>分类</label><input id="f_cat" value="${escapeHtml(it.category || '')}"></div>
     <div class="row"><label>单位</label><input id="f_unit" value="${escapeHtml(it.unit)}"></div>
     <div class="row"><label>预警线</label><input id="f_min" type="number" min="0" value="${it.minQty}"></div>
+    <label class="check-row"><input type="checkbox" id="f_need_damage" ${it.needDamage ? 'checked' : ''}>
+      <span>📸 需要报损 <span class="hint">出库/报损时必须拍摄旧物品照片</span></span>
+    </label>
     <div class="text-light">当前库存：${it.qty} ${escapeHtml(it.unit)}（要改库存请走"入库"流程）</div>
     <div class="btn-row">
       <button class="btn ghost" onclick="this.closest('.modal-bg').remove()">取消</button>
@@ -710,6 +823,7 @@ async function editItem(id) {
     category: document.getElementById('f_cat').value.trim(),
     unit: document.getElementById('f_unit').value.trim(),
     minQty: Number(document.getElementById('f_min').value) || 0,
+    needDamage: document.getElementById('f_need_damage').checked,
   };
   try {
     await api('/items', 'POST', data);
@@ -757,6 +871,11 @@ function inboundRowHtml(idx, isFirst) {
       <div class="field-row in_new_fields" style="display:none">
         <label>单位</label>
         <input class="in_new_unit" value="件">
+      </div>
+      <div class="field-row in_new_fields" style="display:none">
+        <label class="check-row"><input type="checkbox" class="in_new_damage">
+          <span>📸 需要报损 <span class="hint">出库时需拍旧物品照片</span></span>
+        </label>
       </div>
       <div class="field-row">
         <label>数量</label>
@@ -844,6 +963,7 @@ async function doInbound() {
         newName,
         spec: row.querySelector('.in_new_spec').value.trim(),
         unit: row.querySelector('.in_new_unit').value.trim() || '件',
+        needDamage: row.querySelector('.in_new_damage').checked,
         qty, remark,
       });
     } else {
@@ -909,7 +1029,7 @@ function renderApply() {
       <h2>📋 我的申请记录</h2>
       ${myReq.length ? `
       <div class="table-wrap"><table>
-        <thead><tr><th>时间</th><th>类型</th><th>物品</th><th>数量</th><th>状态</th><th>原因</th><th>操作</th></tr></thead>
+        <thead><tr><th>时间</th><th>类型</th><th>物品</th><th>数量</th><th>状态</th><th>原因</th><th>照片</th><th>操作</th></tr></thead>
         <tbody>${myReq.map(r => `
           <tr>
             <td>${fmtTime(r.time)}</td>
@@ -918,6 +1038,7 @@ function renderApply() {
             <td>${r.qty} ${escapeHtml(r.unit)}</td>
             <td><span class="tag ${r.status}">${statusText(r.status)}</span></td>
             <td>${escapeHtml(r.reason || '-')}</td>
+            <td>${r.photo ? `<img class="photo-thumb" src="${photoUrl(r.photo)}" onclick="viewPhoto('${r.photo}')" alt="照片">` : '-'}</td>
             <td>${r.status === 'pending' ? `<button class="btn small danger" onclick="cancelReq('${r.id}')">撤回</button>` : ''}</td>
           </tr>
         `).join('')}</tbody>
@@ -929,7 +1050,7 @@ function renderApply() {
 // 批量申请行 HTML
 function applyRowHtml(idx, type, isFirst) {
   const itemOpts = STATE.items.map(it =>
-    `<option value="${it.id}">${escapeHtml(it.name)} · 现 ${it.qty} ${escapeHtml(it.unit)}</option>`
+    `<option value="${it.id}" data-nd="${it.needDamage ? '1' : ''}">${escapeHtml(it.name)}${it.needDamage ? ' 📸' : ''} · 现 ${it.qty} ${escapeHtml(it.unit)}</option>`
   ).join('');
   // type: 'out' | 'damage' | 'buy'
   const isBuy = type === 'buy';
@@ -938,7 +1059,7 @@ function applyRowHtml(idx, type, isFirst) {
       <span class="idx">#${idx + 1}</span>
       <div class="field-row" style="display:${isBuy ? 'none' : 'flex'}">
         <label>物品</label>
-        <select class="ap_item"><option value="">-- 请选择 --</option>${itemOpts}</select>
+        <select class="ap_item" onchange="onApplyItemChange(this)"><option value="">-- 请选择 --</option>${itemOpts}</select>
       </div>
       <div class="field-row" style="display:${isBuy ? 'flex' : 'none'}">
         <label>物品名</label>
@@ -956,6 +1077,14 @@ function applyRowHtml(idx, type, isFirst) {
         <label>数量</label>
         <input class="ap_qty" type="number" min="0.01" step="0.01" placeholder="如：5">
       </div>
+      <div class="field-row ap_photo_row" style="display:none">
+        <label>旧物照片 <span class="damage-tag" style="margin-left:0">必拍</span></label>
+        <div class="photo-box" data-photo-data="" data-photo-path="">
+          <label class="photo-btn">📷 拍摄旧物品照片（必填）
+            <input type="file" accept="image/*" capture="environment" style="display:none" onchange="onApplyPhoto(this)">
+          </label>
+        </div>
+      </div>
       <div class="field-row">
         <label>原因<span class="optional-tag">选填</span></label>
         <input class="ap_reason" placeholder="如：小班上课用">
@@ -963,6 +1092,15 @@ function applyRowHtml(idx, type, isFirst) {
       ${isFirst ? '' : `<button type="button" class="del" onclick="removeApplyRow(this)">✕ 删除此行</button>`}
     </div>
   `;
+}
+// 申请行选择物品后：需要报损的物品 → 展开拍照字段
+function onApplyItemChange(sel) {
+  const row = sel.closest('.batch-row');
+  if (!row) return;
+  const opt = sel.options[sel.selectedIndex];
+  const need = !!(opt && opt.dataset.nd === '1');
+  const fr = row.querySelector('.ap_photo_row');
+  if (fr) fr.style.display = need ? 'flex' : 'none';
 }
 function switchApplyType() {
   const t = document.getElementById('ap_type').value;
@@ -977,6 +1115,12 @@ function switchApplyType() {
     setDisp(r, '.ap_buy_name', isBuy ? '' : 'none');
     setDisp(r, '.ap_buy_spec', isBuy ? '' : 'none');
     setDisp(r, '.ap_buy_unit', isBuy ? '' : 'none');
+    // 照片行：仅出库/报损且物品需报损时显示
+    const photoFr = r.querySelector('.ap_photo_row');
+    if (photoFr) {
+      if (isBuy) { photoFr.style.display = 'none'; }
+      else { const itemSel = r.querySelector('.ap_item'); if (itemSel) onApplyItemChange(itemSel); }
+    }
   });
 }
 function addApplyRow() {
@@ -1048,7 +1192,26 @@ async function submitApply() {
         row.querySelector('.ap_item').focus();
         return toast('请选择物品', 'warning');
       }
-      requests.push({ type, itemId, qty, reason });
+      // 需要报损的物品：必须已拍照
+      const opt = row.querySelector('.ap_item').options[row.querySelector('.ap_item').selectedIndex];
+      const need = !!(opt && opt.dataset.nd === '1');
+      let photo = '';
+      if (need) {
+        const box = row.querySelector('.photo-box');
+        if (!box || !box.dataset.photoData) {
+          const pb = row.querySelector('.photo-btn');
+          if (pb) pb.focus();
+          return toast('该物品需要报损，请先拍摄旧物品照片', 'warning');
+        }
+        // 上传照片
+        try {
+          toast('正在上传照片…', '');
+          photo = await uploadPhoto(box.dataset.photoData);
+        } catch (e) {
+          return toast('照片上传失败：' + e.message, 'error');
+        }
+      }
+      requests.push({ type, itemId, qty, reason, photo });
     }
   }
 
@@ -1098,6 +1261,7 @@ function renderApprove() {
           </div>
           <div class="text-light mb">申请人：<b>${escapeHtml(r.applicant)}</b> · 原因：${escapeHtml(r.reason || '无')}</div>
           ${r.type !== 'buy' && r.currentQty != null ? `<div class="text-light mb">当前库存：${r.currentQty} ${escapeHtml(r.unit)}</div>` : ''}
+          ${r.photo ? `<div class="mb"><div class="text-light" style="font-size:12px;margin-bottom:4px">📸 旧物品照片（点击放大）：</div><img class="photo-preview" src="${photoUrl(r.photo)}" onclick="viewPhoto('${r.photo}')" alt="旧物品照片"></div>` : ''}
           <div class="btn-row">
             <button class="btn success" onclick="approveReq('${r.id}', 'approve')">✓ 批准</button>
             <button class="btn danger" onclick="approveReq('${r.id}', 'reject')">✕ 驳回</button>
@@ -1177,6 +1341,9 @@ async function buyDone(id) {
       <div class="row"><label>规格</label><input id="bd_new_spec" value="${escapeHtml(r.spec || '')}"></div>
       <div class="row"><label>单位</label><input id="bd_new_unit" value="${escapeHtml(r.unit)}"></div>
       <div class="row"><label>预警线</label><input id="bd_new_min" type="number" min="0" value="0"></div>
+      <label class="check-row"><input type="checkbox" id="bd_new_damage">
+        <span>📸 需要报损 <span class="hint">出库/报损时必须拍摄旧物品照片</span></span>
+      </label>
     </div>
     <div class="row"><label>实际入库数</label><input id="bd_qty" type="number" min="0.01" value="${r.qty}"></div>
     <div class="btn-row">
@@ -1202,6 +1369,7 @@ async function submitBuyDone(id) {
     data.spec = document.getElementById('bd_new_spec').value.trim();
     data.unit = document.getElementById('bd_new_unit').value.trim();
     data.minQty = Number(document.getElementById('bd_new_min').value) || 0;
+    data.needDamage = document.getElementById('bd_new_damage').checked;
     if (!data.newName) return toast('请填写新物品名', 'warning');
   }
   try {
