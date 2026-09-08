@@ -242,12 +242,6 @@ tr:hover td { background: #FAFBFC; }
   font-size: 13px; cursor: pointer; user-select: none; }
 .check-row input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--primary); cursor: pointer; margin: 0; }
 .check-row .hint { font-size: 12px; color: var(--text-light); }
-.photo-box { display: flex; flex-direction: column; gap: 8px; width: 100%; }
-.photo-btn { display: flex; align-items: center; justify-content: center; gap: 6px;
-  padding: 12px; border: 2px dashed var(--primary); border-radius: 10px;
-  background: var(--primary-light); color: var(--primary-dark); font-size: 13px;
-  cursor: pointer; width: 100%; }
-.photo-btn.has { border-style: solid; border-color: var(--success, #7cc79a); background: #eafaf0; color: #2c7a4b; }
 .photo-preview { max-width: 140px; max-height: 140px; border-radius: 10px;
   border: 1px solid var(--border); cursor: zoom-in; object-fit: cover; }
 .photo-thumb { width: 46px; height: 46px; border-radius: 8px; border: 1px solid var(--border);
@@ -734,7 +728,7 @@ function showAddItem() {
     <div class="row"><label>期初数量</label><input id="f_init" type="number" min="0" value="0"></div>
     <div class="row"><label>预警线</label><input id="f_min" type="number" min="0" value="0"></div>
     <label class="check-row"><input type="checkbox" id="f_need_damage">
-      <span>📸 需要报损 <span class="hint">出库/报损时必须拍摄旧物品照片</span></span>
+      <span>需要报损 <span class="hint">仅作标记，出库/报损无需拍照</span></span>
     </label>
     <div class="btn-row">
       <button class="btn ghost" onclick="this.closest('.modal-bg').remove()">取消</button>
@@ -774,7 +768,7 @@ function showEditItem(id) {
     <div class="row"><label>单位</label><input id="f_unit" value="${escapeHtml(it.unit)}"></div>
     <div class="row"><label>预警线</label><input id="f_min" type="number" min="0" value="${it.minQty}"></div>
     <label class="check-row"><input type="checkbox" id="f_need_damage" ${it.needDamage ? 'checked' : ''}>
-      <span>📸 需要报损 <span class="hint">出库/报损时必须拍摄旧物品照片</span></span>
+      <span>需要报损 <span class="hint">仅作标记，出库/报损无需拍照</span></span>
     </label>
     <div class="text-light">当前库存：${it.qty} ${escapeHtml(it.unit)}（要改库存请走"入库"流程）</div>
     <div class="btn-row">
@@ -1268,7 +1262,7 @@ async function buyDone(id) {
       <div class="row"><label>单位</label><input id="bd_new_unit" value="${escapeHtml(r.unit)}"></div>
       <div class="row"><label>预警线</label><input id="bd_new_min" type="number" min="0" value="0"></div>
       <label class="check-row"><input type="checkbox" id="bd_new_damage">
-        <span>📸 需要报损 <span class="hint">出库/报损时必须拍摄旧物品照片</span></span>
+        <span>需要报损 <span class="hint">仅作标记，出库/报损无需拍照</span></span>
       </label>
     </div>
     <div class="row"><label>实际入库数</label><input id="bd_qty" type="number" min="0.01" value="${r.qty}"></div>
