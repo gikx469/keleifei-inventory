@@ -736,7 +736,7 @@ async function delItem(id) {
 function inboundItemOpts() {
   return STATE.items.map(it =>
     `<option value="${it.id}">${escapeHtml(it.name)} (${escapeHtml(it.spec || '')}) · 现 ${it.qty} ${escapeHtml(it.unit)}</option>`
-  ).join('');
+  ).join('') + `<option value="__new__">➕ 新物品（基本信息里没有，入库后自动建档）</option>`;
 }
 function inboundRowHtml(idx, isFirst) {
   return `
@@ -744,7 +744,19 @@ function inboundRowHtml(idx, isFirst) {
       <span class="idx">#${idx + 1}</span>
       <div class="field-row">
         <label>物品</label>
-        <select class="in_item">${inboundItemOpts()}</select>
+        <select class="in_item" onchange="toggleInboundNew(this)">${inboundItemOpts()}</select>
+      </div>
+      <div class="field-row in_new_fields" style="display:none">
+        <label>新物品名</label>
+        <input class="in_new_name" placeholder="基本信息里没有的物品名">
+      </div>
+      <div class="field-row in_new_fields" style="display:none">
+        <label>规格<span class="optional-tag">选填</span></label>
+        <input class="in_new_spec" placeholder="如：330ml×24">
+      </div>
+      <div class="field-row in_new_fields" style="display:none">
+        <label>单位</label>
+        <input class="in_new_unit" value="件">
       </div>
       <div class="field-row">
         <label>数量</label>
@@ -758,11 +770,19 @@ function inboundRowHtml(idx, isFirst) {
     </div>
   `;
 }
+// 选择「➕ 新物品」时展开新物品字段
+function toggleInboundNew(sel) {
+  const row = sel.closest('.batch-row');
+  if (!row) return;
+  const isNew = sel.value === '__new__';
+  row.querySelectorAll('.in_new_fields').forEach(fr => { fr.style.display = isNew ? 'flex' : 'none'; });
+  if (isNew) { const nm = row.querySelector('.in_new_name'); if (nm) nm.focus(); }
+}
 function renderInbound() {
   return `
     <div class="card">
       <h2>📥 直接入库（无需审批）</h2>
-      <div class="text-light mb">入库会立即增加数量并记录流水。可一次录入多种物品。仅管理员和授权人员可操作。</div>
+      <div class="text-light mb">入库会立即增加数量并记录流水。可一次录入多种物品；物品下拉里选「➕ 新物品」可直接入基本信息里还没有的东西，入库完自动建档。仅管理员和授权人员可操作。</div>
       <div id="inboundList" class="batch-list">${inboundRowHtml(0, true)}</div>
       <button type="button" class="batch-add" onclick="addInboundRow()">＋ 添加一种物品</button>
       <div class="btn-row">
@@ -807,23 +827,38 @@ async function doInbound() {
   const rows = Array.from(document.querySelectorAll('#inboundList .batch-row'));
   const items = [];
   for (const row of rows) {
-    const itemId = row.querySelector('.in_item').value;
+    const selVal = row.querySelector('.in_item').value;
     const qty = Number(row.querySelector('.in_qty').value);
     const remark = row.querySelector('.in_remark').value.trim();
     if (!qty || qty <= 0) {
       row.querySelector('.in_qty').focus();
       return toast('请填写每一行的数量', 'warning');
     }
-    items.push({ itemId, qty, remark });
+    if (selVal === '__new__') {
+      const newName = row.querySelector('.in_new_name').value.trim();
+      if (!newName) {
+        row.querySelector('.in_new_name').focus();
+        return toast('请填写新物品的名称', 'warning');
+      }
+      items.push({
+        newName,
+        spec: row.querySelector('.in_new_spec').value.trim(),
+        unit: row.querySelector('.in_new_unit').value.trim() || '件',
+        qty, remark,
+      });
+    } else {
+      items.push({ itemId: selVal, qty, remark });
+    }
   }
   if (items.length === 0) return toast('请至少添加一种入库物品', 'warning');
   try {
     const r = await api('/inbound', 'POST', { items });
     if (items.length === 1) {
       const x = r.results[0];
-      toast(`入库成功！${x.name} 从 ${x.before} → ${x.after} ${x.unit}`, 'success');
+      toast(`入库成功！${x.name} 从 ${x.before} → ${x.after} ${x.unit}${x.created ? '（已自动建档）' : ''}`, 'success');
     } else {
-      toast(`批量入库成功！共 ${r.count} 种物品`, 'success');
+      const created = r.results.filter(x => x.created).length;
+      toast(`批量入库成功！共 ${r.count} 种物品${created ? `，其中 ${created} 种已自动建档` : ''}`, 'success');
     }
     resetInboundRows();
     await refreshState();
@@ -836,6 +871,7 @@ function quickInbound(id) {
     const sel = document.querySelector('#inboundList .batch-row .in_item');
     if (sel) {
       sel.value = id;
+      toggleInboundNew(sel);
       document.querySelector('#inboundList .in_qty')?.focus();
     }
   }, 100);
@@ -866,7 +902,7 @@ function renderApply() {
         <button class="btn" onclick="submitApply()">✓ 提交申请（共 <span id="applyCount">1</span> 种）</button>
         <button type="button" class="btn ghost small" onclick="resetApplyRows()">清空</button>
       </div>
-      <div class="text-light mt">提交后等管理员审批。出库/报损批准后立即扣库存；采买批准后由管理员入库。</div>
+      <div class="text-light mt">提交后等管理员审批。出库/报损批准后立即扣库存；采买可填基本信息里还没有的新物品，批准后由管理员入库并自动建档。</div>
     </div>
 
     <div class="card">
@@ -906,7 +942,7 @@ function applyRowHtml(idx, type, isFirst) {
       </div>
       <div class="field-row" style="display:${isBuy ? 'flex' : 'none'}">
         <label>物品名</label>
-        <input class="ap_buy_name" placeholder="新物品名">
+        <input class="ap_buy_name" placeholder="可填基本信息里没有的新物品">
       </div>
       <div class="field-row" style="display:${isBuy ? 'flex' : 'none'}">
         <label>规格</label>
