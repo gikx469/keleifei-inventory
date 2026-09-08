@@ -609,11 +609,8 @@ export async function onRequest(context) {
       const qty = Number(row.qty);
       if (!qty || qty <= 0) return ERR(`「${it.name}」数量必须大于 0`);
       if (qty > Number(it.qty)) return ERR(`「${it.name}」超过当前库存（现存 ${it.qty} ${it.unit}）`);
-      // 需要报损的物品：出库/报损必须上传旧物品照片
+      // 照片字段保留兼容（不再强制：报损无需拍照）
       const photo = String(row.photo || '').trim();
-      if (it.needDamage && !photo) {
-        return ERR(`「${it.name}」是需要报损的物品，请先拍摄旧物品照片再提交`);
-      }
       db.requests.push({
         id: uid(), type, itemId: it.id, itemName: it.name,
         spec: it.spec, unit: it.unit,
