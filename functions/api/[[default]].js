@@ -68,8 +68,10 @@ function makeSupabaseStore(env) {
     kind: 'supabase',
     async get(k) {
       let r;
+      // 加 cache-buster 避免 CDN 缓存
+      const url = readUrl(k) + '?t=' + Date.now() + Math.random().toString(36).slice(2, 8);
       try {
-        r = await fetch(readUrl(k), { headers });
+        r = await fetch(url, { headers: Object.assign({}, headers, { 'Cache-Control': 'no-cache' }) });
       } catch (e) {
         throw new Error('无法连接 Supabase（' + e.message + '），请检查 SUPABASE_URL');
       }
