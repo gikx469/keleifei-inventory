@@ -441,6 +441,7 @@ export async function onRequest(context) {
         unit: String(body.unit || '').trim() || '件',
         qty: initQty,
         minQty: Math.max(0, Number(body.minQty) || 0),
+        needDamage: !!body.needDamage,
         createdAt: today(),
       };
       db.items.push(item);
@@ -466,6 +467,7 @@ export async function onRequest(context) {
       const unit = String(body.unit || '').trim();
       if (unit) it.unit = unit;
       it.minQty = Math.max(0, Number(body.minQty) || 0);
+      it.needDamage = !!body.needDamage;
       await saveDb(kv, db);
       return json({ ok: true });
     }
@@ -509,6 +511,7 @@ export async function onRequest(context) {
             category: String(row.category || '').trim(),
             unit: String(row.unit || '').trim() || '件',
             qty: 0, minQty: Math.max(0, Number(row.minQty) || 0),
+            needDamage: !!row.needDamage,
             createdAt: today(),
           };
           db.items.push(it);
@@ -535,15 +538,67 @@ export async function onRequest(context) {
     return json({ ok: true, count: results.length, results });
   }
 
+  /* ---------- POST /api/upload 上传出库照片（base64 → Supabase Storage） ---------- */
+  if (path === '/api/upload' && method === 'POST') {
+    if (!user) return needLogin();
+    const dataUrl = String(body.data || '');
+    const m = dataUrl.match(/^data:image\/(jpeg|jpg|png|webp);base64,([A-Za-z0-9+/=\s]+)$/);
+    if (!m) return ERR('照片格式不正确（仅支持 jpg/png/webp）');
+    const ext = m[1] === 'png' ? 'png' : (m[1] === 'webp' ? 'webp' : 'jpg');
+    let bytes;
+    try {
+      const bin = atob(m[2].replace(/\s/g, ''));
+      bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
+    } catch (e) {
+      return ERR('照片数据解码失败，请重拍');
+    }
+    if (bytes.length < 500) return ERR('照片内容异常，请重拍');
+    if (bytes.length > 3 * 1024 * 1024) return ERR('照片超过 3MB，请压缩后再传');
+    const baseUrl = String(env.SUPABASE_URL || '').replace(/\/+$/, '');
+    const skey = env.SUPABASE_KEY || env.SUPABASE_SERVICE_KEY || '';
+    if (!baseUrl || !skey) return ERR('照片存储未配置（SUPABASE_URL/SUPABASE_KEY）', 500);
+    const bucket = env.SUPABASE_BUCKET || 'klf';
+    const fname = 'photos/' + uid() + randHex(4) + '.' + ext;
+    const up = await fetch(baseUrl + '/storage/v1/object/' + bucket + '/' + fname, {
+      method: 'POST',
+      headers: { apikey: skey, Authorization: 'Bearer ' + skey, 'Content-Type': 'image/' + ext, 'x-upsert': 'true' },
+      body: bytes,
+    });
+    if (!up.ok) {
+      const t = await up.text();
+      return ERR('照片上传失败 ' + up.status + ': ' + t.slice(0, 120), 500);
+    }
+    return json({ ok: true, path: fname });
+  }
+
+  /* ---------- GET /api/photo?p=photos/xx.jpg 读取照片（登录鉴权代理） ---------- */
+  if (path === '/api/photo' && method === 'GET') {
+    if (!user) return needLogin();
+    const p = String(url.searchParams.get('p') || '');
+    if (!/^photos\/[A-Za-z0-9._-]+$/.test(p)) return ERR('照片路径不正确');
+    const baseUrl = String(env.SUPABASE_URL || '').replace(/\/+$/, '');
+    const skey = env.SUPABASE_KEY || env.SUPABASE_SERVICE_KEY || '';
+    if (!baseUrl || !skey) return ERR('照片存储未配置', 500);
+    const bucket = env.SUPABASE_BUCKET || 'klf';
+    const r2 = await fetch(baseUrl + '/storage/v1/object/authenticated/' + bucket + '/' + p + '?t=' + Date.now(), {
+      headers: { apikey: skey, Authorization: 'Bearer ' + skey },
+    });
+    if (!r2.ok) return ERR('照片不存在或已被删除', 404);
+    const ct = r2.headers.get('content-type') || 'image/jpeg';
+    return new Response(r2.body, {
+      headers: { 'content-type': ct, 'Cache-Control': 'private, max-age=3600' },
+    });
+  }
+
   /* ---------- POST /api/req 出库/报损申请（支持批量） ---------- */
   if (path === '/api/req' && method === 'POST') {
     if (!user) return needLogin();
-    // 兼容单条 {type, itemId, qty, reason} 和批量 {requests: [{type, itemId, qty, reason}, ...]}
+    // 兼容单条 {type, itemId, qty, reason, photo} 和批量 {requests: [{type, itemId, qty, reason, photo}, ...]}
     let rows = [];
     if (Array.isArray(body.requests) && body.requests.length) {
       rows = body.requests;
     } else if (body.type && body.itemId) {
-      rows = [{ type: body.type, itemId: body.itemId, qty: body.qty, reason: body.reason || '' }];
+      rows = [{ type: body.type, itemId: body.itemId, qty: body.qty, reason: body.reason || '', photo: body.photo || '' }];
     }
     if (rows.length === 0) return ERR('请至少添加一种申请');
     for (const row of rows) {
@@ -554,11 +609,17 @@ export async function onRequest(context) {
       const qty = Number(row.qty);
       if (!qty || qty <= 0) return ERR(`「${it.name}」数量必须大于 0`);
       if (qty > Number(it.qty)) return ERR(`「${it.name}」超过当前库存（现存 ${it.qty} ${it.unit}）`);
+      // 需要报损的物品：出库/报损必须上传旧物品照片
+      const photo = String(row.photo || '').trim();
+      if (it.needDamage && !photo) {
+        return ERR(`「${it.name}」是需要报损的物品，请先拍摄旧物品照片再提交`);
+      }
       db.requests.push({
         id: uid(), type, itemId: it.id, itemName: it.name,
         spec: it.spec, unit: it.unit,
         currentQty: Number(it.qty), qty,
         reason: String(row.reason || '').trim(),
+        photo,
         applicantId: user.id, applicant: user.name,
         time: nowStr(), status: 'pending',
         approver: '', approveTime: '', note: '', doneTime: '', doneQty: null, doneItemId: '',
@@ -694,6 +755,7 @@ export async function onRequest(context) {
         spec: String(body.spec || '').trim(), category: '采买入库',
         unit: String(body.unit || '').trim() || r.unit || '件',
         qty: 0, minQty: Math.max(0, Number(body.minQty) || 0),
+        needDamage: !!body.needDamage,
         createdAt: today(),
       };
       db.items.push(it);
