@@ -390,16 +390,20 @@ export async function onRequest(context) {
 
   /* ---------- POST /api/login 登录 ---------- */
   if (path === '/api/login' && method === 'POST') {
-    const name = String(body.name || '').trim();
-    const pass = String(body.pass || '');
-    const u = db.users.find(x => x.name === name);
-    if (!u) return ERR('用户不存在，请先注册');
-    const ok = await verifyPassword(pass, u.salt, u.pass);
-    if (!ok) return ERR('密码错误');
-    const tk = newToken();
-    db.sessions[tk] = { userId: u.id, createdAt: nowStr(), lastSeen: nowStr() };
-    await saveDb(kv, db);
-    return json({ token: tk, state: pubState(db, u) });
+    try {
+      const name = String(body.name || '').trim();
+      const pass = String(body.pass || '');
+      const u = db.users.find(x => x.name === name);
+      if (!u) return ERR('用户不存在，请先注册');
+      const ok = await verifyPassword(pass, u.salt, u.pass);
+      if (!ok) return ERR('密码错误');
+      const tk = newToken();
+      db.sessions[tk] = { userId: u.id, createdAt: nowStr(), lastSeen: nowStr() };
+      await saveDb(kv, db);
+      return json({ token: tk, state: pubState(db, u) });
+    } catch (e) {
+      return json({ error: 'login failed: ' + String(e && e.message || e), stack: String(e && e.stack || '') }, 500);
+    }
   }
 
   /* ---------- GET /api/state ---------- */
