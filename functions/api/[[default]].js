@@ -281,46 +281,6 @@ export async function onRequest(context) {
     });
   }
 
-  /* 临时探测：验证 EdgeOne 边缘节点能否连通 Supabase（验证后删除） */
-  if (path === '/api/debug-supabase') {
-    const target = url.searchParams.get('url') || 'https://zxbrtojycivlohitzztm.supabase.co/auth/v1/health';
-    const t0 = Date.now();
-    try {
-      const r = await fetch(target, { method: 'GET', headers: { apikey: 'probe' } });
-      const text = (await r.text()).slice(0, 300);
-      return json({ ok: r.ok, status: r.status, ms: Date.now() - t0, target, body: text }, 200);
-    } catch (e) {
-      return json({ ok: false, error: String(e && e.message || e), ms: Date.now() - t0, target }, 200);
-    }
-  }
-
-  /* ---------- DEBUG: 列出用户名单（无需鉴权，调试用） ---------- */
-  if (path === '/api/debug-list-users' && method === 'GET') {
-    const q = String(url.searchParams.get('q') || '').toLowerCase();
-    const users = db.users.map(u => ({
-      name: u.name,
-      role: u.role,
-      saltLen: (u.salt || '').length,
-      hashLen: (u.pass || '').length,
-      match: q ? u.name.toLowerCase().includes(q) : true,
-    }));
-    return json({ users, total: db.users.length, items: db.items.length, logs: db.logs.length });
-  }
-
-  /* ---------- ADMIN: 重置任意用户密码（无需鉴权，调试用） ---------- */
-  if (path === '/api/admin-reset-pass' && method === 'POST') {
-    const name = String(body.name || '').trim();
-    const newPass = String(body.newPass || '');
-    if (!name || !newPass) return ERR('缺少 name 或 newPass');
-    const u = db.users.find(x => x.name === name);
-    if (!u) return ERR('用户不存在: ' + name);
-    const rec = await makePasswordRecord(newPass);
-    u.salt = rec.salt;
-    u.pass = rec.hash;
-    await saveDb(kv, db);
-    return json({ ok: true, name: u.name, role: u.role, saltLen: rec.salt.length });
-  }
-
   /* 存储层选择：优先 KV（若已绑定），否则用 Supabase（若已配置环境变量） */
   let kv = null, kvName = null;
   const kvRes = getKV(env);
@@ -508,69 +468,101 @@ export async function onRequest(context) {
     return ERR('未知操作');
   }
 
-  /* ---------- POST /api/inbound 直接入库 ---------- */
+  /* ---------- POST /api/inbound 直接入库（支持批量） ---------- */
   if (path === '/api/inbound' && method === 'POST') {
     if (!user) return needLogin();
     if (!canIn(user)) return json({ error: '需要入库/建档权限' }, 403);
-    const it = db.items.find(x => x.id === body.itemId);
-    if (!it) return ERR('请选择物品');
-    const qty = Number(body.qty);
-    if (!qty || qty <= 0) return ERR('数量必须大于 0');
-    const before = Number(it.qty);
-    const after = before + qty;
-    it.qty = after;
-    db.logs.push({
-      id: uid(), time: nowStr(), type: 'in', itemId: it.id, itemName: it.name,
-      spec: it.spec, unit: it.unit,
-      before, qty, after,
-      person: user.name, remark: String(body.remark || ''),
-    });
+    // 兼容单条 {itemId, qty, remark} 和批量 {items: [{itemId, qty, remark}, ...]}
+    let items = [];
+    if (Array.isArray(body.items) && body.items.length) {
+      items = body.items;
+    } else if (body.itemId) {
+      items = [{ itemId: body.itemId, qty: body.qty, remark: body.remark || '' }];
+    }
+    if (items.length === 0) return ERR('请至少添加一种入库物品');
+    const results = [];
+    for (const row of items) {
+      const it = db.items.find(x => x.id === row.itemId);
+      if (!it) return ERR('物品不存在: ' + row.itemId);
+      const qty = Number(row.qty);
+      if (!qty || qty <= 0) return ERR(`「${it.name}」数量必须大于 0`);
+      const before = Number(it.qty);
+      const after = before + qty;
+      it.qty = after;
+      db.logs.push({
+        id: uid(), time: nowStr(), type: 'in', itemId: it.id, itemName: it.name,
+        spec: it.spec, unit: it.unit,
+        before, qty, after,
+        person: user.name, remark: String(row.remark || ''),
+      });
+      results.push({ itemId: it.id, name: it.name, before, after, unit: it.unit });
+    }
     await saveDb(kv, db);
-    return json({ ok: true, before, after, unit: it.unit, name: it.name });
+    return json({ ok: true, count: results.length, results });
   }
 
-  /* ---------- POST /api/req 出库/报损申请 ---------- */
+  /* ---------- POST /api/req 出库/报损申请（支持批量） ---------- */
   if (path === '/api/req' && method === 'POST') {
     if (!user) return needLogin();
-    const type = body.type;
-    if (type !== 'out' && type !== 'damage') return ERR('类型错误');
-    const it = db.items.find(x => x.id === body.itemId);
-    if (!it) return ERR('请选择物品');
-    const qty = Number(body.qty);
-    if (!qty || qty <= 0) return ERR('数量必须大于 0');
-    if (qty > Number(it.qty)) return ERR(`超过当前库存（现存 ${it.qty} ${it.unit}）`);
-    db.requests.push({
-      id: uid(), type, itemId: it.id, itemName: it.name,
-      spec: it.spec, unit: it.unit,
-      currentQty: Number(it.qty), qty,
-      reason: String(body.reason || '').trim(),
-      applicantId: user.id, applicant: user.name,
-      time: nowStr(), status: 'pending',
-      approver: '', approveTime: '', note: '', doneTime: '', doneQty: null, doneItemId: '',
-    });
+    // 兼容单条 {type, itemId, qty, reason} 和批量 {requests: [{type, itemId, qty, reason}, ...]}
+    let rows = [];
+    if (Array.isArray(body.requests) && body.requests.length) {
+      rows = body.requests;
+    } else if (body.type && body.itemId) {
+      rows = [{ type: body.type, itemId: body.itemId, qty: body.qty, reason: body.reason || '' }];
+    }
+    if (rows.length === 0) return ERR('请至少添加一种申请');
+    for (const row of rows) {
+      const type = row.type;
+      if (type !== 'out' && type !== 'damage') return ERR('类型错误（仅支持出库 / 报损）');
+      const it = db.items.find(x => x.id === row.itemId);
+      if (!it) return ERR('请选择物品');
+      const qty = Number(row.qty);
+      if (!qty || qty <= 0) return ERR(`「${it.name}」数量必须大于 0`);
+      if (qty > Number(it.qty)) return ERR(`「${it.name}」超过当前库存（现存 ${it.qty} ${it.unit}）`);
+      db.requests.push({
+        id: uid(), type, itemId: it.id, itemName: it.name,
+        spec: it.spec, unit: it.unit,
+        currentQty: Number(it.qty), qty,
+        reason: String(row.reason || '').trim(),
+        applicantId: user.id, applicant: user.name,
+        time: nowStr(), status: 'pending',
+        approver: '', approveTime: '', note: '', doneTime: '', doneQty: null, doneItemId: '',
+      });
+    }
     await saveDb(kv, db);
-    return json({ ok: true });
+    return json({ ok: true, count: rows.length });
   }
 
-  /* ---------- POST /api/buy 采买申请 ---------- */
+  /* ---------- POST /api/buy 采买申请（支持批量） ---------- */
   if (path === '/api/buy' && method === 'POST') {
     if (!user) return needLogin();
-    const name = String(body.itemName || '').trim();
-    const qty = Number(body.qty);
-    if (!name) return ERR('请填写需要采买的物品名称');
-    if (!qty || qty <= 0) return ERR('数量必须大于 0');
-    db.requests.push({
-      id: uid(), type: 'buy', itemId: '', itemName: name,
-      spec: String(body.spec || '').trim(),
-      unit: String(body.unit || '').trim() || '件',
-      currentQty: null, qty,
-      reason: String(body.reason || '').trim(),
-      applicantId: user.id, applicant: user.name,
-      time: nowStr(), status: 'pending',
-      approver: '', approveTime: '', note: '', doneTime: '', doneQty: null, doneItemId: '',
-    });
+    // 兼容单条 {itemName, spec, unit, qty, reason} 和批量 {items: [{itemName, spec, unit, qty, reason}, ...]}
+    let rows = [];
+    if (Array.isArray(body.items) && body.items.length) {
+      rows = body.items;
+    } else if (body.itemName) {
+      rows = [{ itemName: body.itemName, spec: body.spec, unit: body.unit, qty: body.qty, reason: body.reason || '' }];
+    }
+    if (rows.length === 0) return ERR('请至少添加一种采买物品');
+    for (const row of rows) {
+      const name = String(row.itemName || '').trim();
+      const qty = Number(row.qty);
+      if (!name) return ERR('请填写需要采买的物品名称');
+      if (!qty || qty <= 0) return ERR(`「${name}」数量必须大于 0`);
+      db.requests.push({
+        id: uid(), type: 'buy', itemId: '', itemName: name,
+        spec: String(row.spec || '').trim(),
+        unit: String(row.unit || '').trim() || '件',
+        currentQty: null, qty,
+        reason: String(row.reason || '').trim(),
+        applicantId: user.id, applicant: user.name,
+        time: nowStr(), status: 'pending',
+        approver: '', approveTime: '', note: '', doneTime: '', doneQty: null, doneItemId: '',
+      });
+    }
     await saveDb(kv, db);
-    return json({ ok: true });
+    return json({ ok: true, count: rows.length });
   }
 
   /* ---------- POST /api/cancelreq 撤回申请 ---------- */
