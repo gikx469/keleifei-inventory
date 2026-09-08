@@ -278,6 +278,19 @@ export async function onRequest(context) {
     });
   }
 
+  /* 临时探测：验证 EdgeOne 边缘节点能否连通 Supabase（验证后删除） */
+  if (path === '/api/debug-supabase') {
+    const target = url.searchParams.get('url') || 'https://zxbrtojycivlohitzztm.supabase.co/auth/v1/health';
+    const t0 = Date.now();
+    try {
+      const r = await fetch(target, { method: 'GET', headers: { apikey: 'probe' } });
+      const text = (await r.text()).slice(0, 300);
+      return json({ ok: r.ok, status: r.status, ms: Date.now() - t0, target, body: text }, 200);
+    } catch (e) {
+      return json({ ok: false, error: String(e && e.message || e), ms: Date.now() - t0, target }, 200);
+    }
+  }
+
   /* 存储层选择：优先 KV（若已绑定），否则用 Supabase（若已配置环境变量） */
   let kv = null, kvName = null;
   const kvRes = getKV(env);
