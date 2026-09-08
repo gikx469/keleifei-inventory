@@ -329,6 +329,11 @@ export async function onRequest(context) {
     });
   }
 
+  /* ---------- DEBUG: 列出用户（临时）---------- */
+  if (path === '/api/_debug_users' && method === 'GET') {
+    return json({ users: db.users.map(u => ({ name: u.name, role: u.role })) });
+  }
+
   /* ---------- POST /api/setup 初始化管理员 ---------- */
   if (path === '/api/setup' && method === 'POST') {
     if (db.users.length > 0) return json({ error: '系统已初始化，请直接登录', needLogin: true }, 400);
