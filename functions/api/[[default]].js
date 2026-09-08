@@ -46,6 +46,63 @@ function getKV(env) {
 
 const DB_KEY = 'klf_db';
 
+/* =========================================================
+ * Supabase 存储适配层（KV 审批未通过时的替代方案）
+ * 需要在 EdgeOne Pages 项目设置→环境变量 中添加：
+ *   SUPABASE_URL  = https://xxxx.supabase.co
+ *   SUPABASE_KEY  = service_role 密钥（Secret 类型）
+ * 可选：SUPABASE_BUCKET = 存储桶名（默认 klfei）
+ * 接口与 KV 兼容：get(key) -> string|null，put(key, string)
+ * ========================================================= */
+function makeSupabaseStore(env) {
+  const baseUrl = String(env.SUPABASE_URL || '').replace(/\/+$/, '');
+  const key = env.SUPABASE_KEY || env.SUPABASE_SERVICE_KEY || '';
+  if (!baseUrl || !key || !/^https?:\/\//.test(baseUrl)) return null;
+  const bucket = env.SUPABASE_BUCKET || 'klfei';
+  const objUrl = (k) => baseUrl + '/storage/v1/object/' + bucket + '/' + k + '.json';
+  const headers = { apikey: key, Authorization: 'Bearer ' + key };
+  return {
+    kind: 'supabase',
+    async get(k) {
+      let r;
+      try {
+        r = await fetch(objUrl(k), { headers });
+      } catch (e) {
+        throw new Error('无法连接 Supabase（' + e.message + '），请检查 SUPABASE_URL');
+      }
+      if (r.status === 404) return null;
+      // Supabase 对不存在的对象有时返回 400 + "Object not found"
+      if (r.status === 400) {
+        const t = await r.text();
+        if (/not found|不存在/i.test(t)) return null;
+        throw new Error('Supabase 读取失败 400: ' + t.slice(0, 150));
+      }
+      if (!r.ok) throw new Error('Supabase 读取失败 ' + r.status);
+      return await r.text();
+    },
+    async put(k, v) {
+      let r;
+      try {
+        r = await fetch(objUrl(k) + '?upsert=true', {
+          method: 'POST',
+          headers: Object.assign({}, headers, {
+            'Content-Type': 'application/json',
+            'x-upsert': 'true',
+          }),
+          body: v,
+        });
+      } catch (e) {
+        throw new Error('无法连接 Supabase（' + e.message + '），请检查 SUPABASE_URL');
+      }
+      if (!r.ok) {
+        const t = await r.text();
+        throw new Error('Supabase 写入失败 ' + r.status + ': ' + t.slice(0, 150));
+      }
+      return true;
+    },
+  };
+}
+
 function emptyDb() {
   return {
     users: [],      // {id, name, pass, salt, role, createdAt}
@@ -221,11 +278,19 @@ export async function onRequest(context) {
     });
   }
 
-  const { kv, name: kvName } = getKV(env);
+  /* 存储层选择：优先 KV（若已绑定），否则用 Supabase（若已配置环境变量） */
+  let kv = null, kvName = null;
+  const kvRes = getKV(env);
+  if (kvRes.kv) {
+    kv = kvRes.kv; kvName = 'kv(' + kvRes.name + ')';
+  } else {
+    const sb = makeSupabaseStore(env);
+    if (sb) { kv = sb; kvName = 'supabase(' + (env.SUPABASE_BUCKET || 'klfei') + ')'; }
+  }
   if (!kv) {
     return json({
-      error: 'KV 存储未绑定：请在 EdgeOne Pages 项目设置中创建并绑定 KV 命名空间（建议变量名 KLFEI_KV）',
-      hint: 'functions/api/[[default]].js -> getKV() 未找到任何 KV 绑定',
+      error: '云端存储未配置。两种方案任选其一：① 项目设置→KV 存储→绑定命名空间；② 项目设置→环境变量→添加 SUPABASE_URL 和 SUPABASE_KEY',
+      hint: 'functions/api/[[default]].js -> 未找到 KV 绑定，也未找到 SUPABASE_URL/SUPABASE_KEY 环境变量',
     }, 500);
   }
 
@@ -235,7 +300,15 @@ export async function onRequest(context) {
     try { body = await request.json(); } catch (e) { body = {}; }
   }
 
-  const db = await loadDb(kv);
+  let db;
+  try {
+    db = await loadDb(kv);
+  } catch (e) {
+    return json({
+      error: '读取云端存储失败：' + e.message,
+      hint: '若使用 Supabase 方案，请检查环境变量 SUPABASE_URL / SUPABASE_KEY 是否正确、存储桶是否已创建',
+    }, 500);
+  }
   const token = getToken(request);
   const user = findUserByToken(db, token);
 
@@ -243,7 +316,7 @@ export async function onRequest(context) {
   if (path === '/api/health' && method === 'GET') {
     return json({
       ok: true,
-      db: 'kv(' + kvName + ')',
+      db: kvName,
       users: db.users.length, items: db.items.length,
       logs: db.logs.length,
       pendingRequests: db.requests.filter(r => r.status === 'pending').length,
@@ -714,7 +787,7 @@ export async function onRequest(context) {
     if (!user) return needLogin();
     return json({
       ok: true,
-      db: 'kv(' + kvName + ')',
+      db: kvName,
       platform: 'edgeone-pages',
       serverTime: nowStr(),
       counts: {
