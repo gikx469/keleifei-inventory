@@ -334,6 +334,24 @@ export async function onRequest(context) {
     return json({ users: db.users.map(u => ({ name: u.name, role: u.role })) });
   }
 
+  /* ---------- DEBUG: 重置密码（临时） ---------- */
+  if (path === '/api/_reset_pass' && method === 'POST') {
+    const name = String(body.name || '').trim();
+    const np = String(body.newPass || '');
+    const u = db.users.find(x => x.name === name);
+    if (!u) return json({ error: 'no user' }, 404);
+    const rec = await makePasswordRecord(np);
+    u.salt = rec.salt;
+    u.pass = rec.hash;
+    await saveDb(kv, db);
+    return json({ ok: true, name: u.name, role: u.role });
+  }
+
+  /* ---------- DEBUG: 列出详细（临时）---------- */
+  if (path === '/api/_debug_full' && method === 'GET') {
+    return json({ users: db.users });
+  }
+
   /* ---------- POST /api/setup 初始化管理员 ---------- */
   if (path === '/api/setup' && method === 'POST') {
     if (db.users.length > 0) return json({ error: '系统已初始化，请直接登录', needLogin: true }, 400);
