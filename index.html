@@ -837,13 +837,17 @@ function applyRowHtml(idx, type, isFirst) {
 }
 function switchApplyType() {
   const t = document.getElementById('ap_type').value;
-  document.querySelectorAll('#applyList .batch-row').forEach((r, i) => {
+  const setDisp = (row, sel, val) => {
+    const el = row.querySelector(sel);
+    if (el) { const fr = el.closest('.field-row'); if (fr) fr.style.display = val; }
+  };
+  document.querySelectorAll('#applyList .batch-row').forEach((r) => {
     const isBuy = (t === 'buy');
     r.querySelectorAll('.field-row').forEach(fr => fr.style.display = '');
-    r.querySelector('.ap_item')?.closest('.field-row').style.display = isBuy ? 'none' : '';
-    r.querySelector('.ap_buy_name')?.closest('.field-row').style.display = isBuy ? '' : 'none';
-    r.querySelector('.ap_buy_spec')?.closest('.field-row').style.display = isBuy ? '' : 'none';
-    r.querySelector('.ap_buy_unit')?.closest('.field-row').style.display = isBuy ? '' : 'none';
+    setDisp(r, '.ap_item', isBuy ? 'none' : '');
+    setDisp(r, '.ap_buy_name', isBuy ? '' : 'none');
+    setDisp(r, '.ap_buy_spec', isBuy ? '' : 'none');
+    setDisp(r, '.ap_buy_unit', isBuy ? '' : 'none');
   });
 }
 function addApplyRow() {
