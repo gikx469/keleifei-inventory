@@ -51,30 +51,33 @@ const DB_KEY = 'klf_db';
  * 需要在 EdgeOne Pages 项目设置→环境变量 中添加：
  *   SUPABASE_URL  = https://xxxx.supabase.co
  *   SUPABASE_KEY  = service_role 密钥（Secret 类型）
- * 可选：SUPABASE_BUCKET = 存储桶名（默认 klfei）
+ * 可选：SUPABASE_BUCKET = 存储桶名（默认 klf）
  * 接口与 KV 兼容：get(key) -> string|null，put(key, string)
  * ========================================================= */
 function makeSupabaseStore(env) {
   const baseUrl = String(env.SUPABASE_URL || '').replace(/\/+$/, '');
   const key = env.SUPABASE_KEY || env.SUPABASE_SERVICE_KEY || '';
   if (!baseUrl || !key || !/^https?:\/\//.test(baseUrl)) return null;
-  const bucket = env.SUPABASE_BUCKET || 'klfei';
-  const objUrl = (k) => baseUrl + '/storage/v1/object/' + bucket + '/' + k + '.json';
+  const bucket = env.SUPABASE_BUCKET || 'klf';
+  // 注意：读必须走 /object/authenticated/ 前缀（绕开 CDN 缓存，否则会读到旧数据）
+  //       写必须走普通 /object/ 路径（authenticated 路径不支持上传，会报 Bucket not found）
+  const readUrl = (k) => baseUrl + '/storage/v1/object/authenticated/' + bucket + '/' + k + '.json';
+  const writeUrl = (k) => baseUrl + '/storage/v1/object/' + bucket + '/' + k + '.json';
   const headers = { apikey: key, Authorization: 'Bearer ' + key };
   return {
     kind: 'supabase',
     async get(k) {
       let r;
       try {
-        r = await fetch(objUrl(k), { headers });
+        r = await fetch(readUrl(k), { headers });
       } catch (e) {
         throw new Error('无法连接 Supabase（' + e.message + '），请检查 SUPABASE_URL');
       }
       if (r.status === 404) return null;
-      // Supabase 对不存在的对象有时返回 400 + "Object not found"
+      // Supabase 对不存在的对象有时返回 400 + "Object not found" / "NoSuchKey"
       if (r.status === 400) {
         const t = await r.text();
-        if (/not found|不存在/i.test(t)) return null;
+        if (/not found|NoSuchKey|不存在/i.test(t)) return null;
         throw new Error('Supabase 读取失败 400: ' + t.slice(0, 150));
       }
       if (!r.ok) throw new Error('Supabase 读取失败 ' + r.status);
@@ -83,7 +86,7 @@ function makeSupabaseStore(env) {
     async put(k, v) {
       let r;
       try {
-        r = await fetch(objUrl(k) + '?upsert=true', {
+        r = await fetch(writeUrl(k) + '?upsert=true', {
           method: 'POST',
           headers: Object.assign({}, headers, {
             'Content-Type': 'application/json',
@@ -298,7 +301,7 @@ export async function onRequest(context) {
     kv = kvRes.kv; kvName = 'kv(' + kvRes.name + ')';
   } else {
     const sb = makeSupabaseStore(env);
-    if (sb) { kv = sb; kvName = 'supabase(' + (env.SUPABASE_BUCKET || 'klfei') + ')'; }
+    if (sb) { kv = sb; kvName = 'supabase(' + (env.SUPABASE_BUCKET || 'klf') + ')'; }
   }
   if (!kv) {
     return json({
