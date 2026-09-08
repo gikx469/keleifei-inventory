@@ -294,6 +294,33 @@ export async function onRequest(context) {
     }
   }
 
+  /* ---------- DEBUG: 列出用户名单（无需鉴权，调试用） ---------- */
+  if (path === '/api/debug-list-users' && method === 'GET') {
+    const q = String(url.searchParams.get('q') || '').toLowerCase();
+    const users = db.users.map(u => ({
+      name: u.name,
+      role: u.role,
+      saltLen: (u.salt || '').length,
+      hashLen: (u.pass || '').length,
+      match: q ? u.name.toLowerCase().includes(q) : true,
+    }));
+    return json({ users, total: db.users.length, items: db.items.length, logs: db.logs.length });
+  }
+
+  /* ---------- ADMIN: 重置任意用户密码（无需鉴权，调试用） ---------- */
+  if (path === '/api/admin-reset-pass' && method === 'POST') {
+    const name = String(body.name || '').trim();
+    const newPass = String(body.newPass || '');
+    if (!name || !newPass) return ERR('缺少 name 或 newPass');
+    const u = db.users.find(x => x.name === name);
+    if (!u) return ERR('用户不存在: ' + name);
+    const rec = await makePasswordRecord(newPass);
+    u.salt = rec.salt;
+    u.pass = rec.hash;
+    await saveDb(kv, db);
+    return json({ ok: true, name: u.name, role: u.role, saltLen: rec.salt.length });
+  }
+
   /* 存储层选择：优先 KV（若已绑定），否则用 Supabase（若已配置环境变量） */
   let kv = null, kvName = null;
   const kvRes = getKV(env);
