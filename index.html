@@ -145,6 +145,31 @@ tr:hover td { background: #FAFBFC; }
 .mb { margin-bottom: 12px; }
 .text-light { color: var(--text-light); font-size: 13px; }
 .danger-text { color: var(--danger); }
+
+/* ---------- 批量录入行 ---------- */
+.batch-list { display: flex; flex-direction: column; gap: 8px; }
+.batch-row { background: #FAFBFC; border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px; display: flex; flex-direction: column; gap: 6px; position: relative; }
+.batch-row .idx { position: absolute; top: -8px; left: 10px; background: var(--primary-light);
+  color: var(--primary-dark); padding: 0 6px; border-radius: 8px; font-size: 11px; font-weight: 600; }
+.batch-row .field-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.batch-row .field-row label { font-size: 12px; color: var(--text-light); min-width: 50px; }
+.batch-row .field-row input,
+.batch-row .field-row select,
+.batch-row .field-row textarea { flex: 1; min-width: 0; padding: 7px 9px; border: 1px solid var(--border);
+  border-radius: 6px; background: #fff; }
+.batch-row .field-row input:focus,
+.batch-row .field-row select:focus,
+.batch-row .field-row textarea:focus { outline: none; border-color: var(--primary); }
+.batch-row .del { align-self: flex-end; padding: 3px 10px; font-size: 12px; color: var(--danger);
+  background: transparent; border: 1px solid var(--danger); border-radius: 4px; }
+.batch-row .del:hover { background: var(--danger); color: #fff; }
+.batch-add { width: 100%; padding: 9px; margin-top: 4px; background: var(--primary-light);
+  color: var(--primary-dark); border: 1px dashed var(--primary); border-radius: 8px;
+  font-size: 13px; cursor: pointer; }
+.batch-add:hover { background: var(--primary); color: #fff; }
+.optional-tag { display: inline-block; background: #f0f0f0; color: var(--text-light);
+  font-size: 11px; padding: 0 5px; border-radius: 3px; margin-left: 4px; font-weight: 400; }
 </style>
 </head>
 <body>
@@ -612,35 +637,102 @@ async function delItem(id) {
 }
 
 /* ============================================================
- * 📥 入库
+ * 📥 入库（支持批量录入）
  * ============================================================ */
-function renderInbound() {
-  const opts = STATE.items.map(it =>
+// 行模板：根据物品列表生成下拉选项 HTML
+function inboundItemOpts() {
+  return STATE.items.map(it =>
     `<option value="${it.id}">${escapeHtml(it.name)} (${escapeHtml(it.spec || '')}) · 现 ${it.qty} ${escapeHtml(it.unit)}</option>`
   ).join('');
+}
+function inboundRowHtml(idx, isFirst) {
   return `
-    <div class="card">
-      <h2>📥 直接入库（无需审批）</h2>
-      <div class="text-light mb">入库会立即增加数量并记录流水。仅管理员和授权人员可操作。</div>
-      <div class="row"><label>物品</label>
-        <select id="in_item">${opts}</select>
+    <div class="batch-row" data-idx="${idx}">
+      <span class="idx">#${idx + 1}</span>
+      <div class="field-row">
+        <label>物品</label>
+        <select class="in_item">${inboundItemOpts()}</select>
       </div>
-      <div class="row"><label>数量</label><input id="in_qty" type="number" min="0.01" step="0.01" placeholder="如：10"></div>
-      <div class="row"><label>备注</label><input id="in_remark" placeholder="选填，如：淘宝购入"></div>
-      <div class="btn-row"><button class="btn success" onclick="doInbound()">✓ 确认入库</button></div>
+      <div class="field-row">
+        <label>数量</label>
+        <input class="in_qty" type="number" min="0.01" step="0.01" placeholder="如：10">
+      </div>
+      <div class="field-row">
+        <label>备注<span class="optional-tag">选填</span></label>
+        <input class="in_remark" placeholder="如：淘宝购入">
+      </div>
+      ${isFirst ? '' : `<button type="button" class="del" onclick="removeInboundRow(this)">✕ 删除此行</button>`}
     </div>
   `;
 }
+function renderInbound() {
+  return `
+    <div class="card">
+      <h2>📥 直接入库（无需审批）</h2>
+      <div class="text-light mb">入库会立即增加数量并记录流水。可一次录入多种物品。仅管理员和授权人员可操作。</div>
+      <div id="inboundList" class="batch-list">${inboundRowHtml(0, true)}</div>
+      <button type="button" class="batch-add" onclick="addInboundRow()">＋ 添加一种物品</button>
+      <div class="btn-row">
+        <button class="btn success" onclick="doInbound()">✓ 确认入库（共 <span id="inboundCount">1</span> 种）</button>
+        <button type="button" class="btn ghost small" onclick="resetInboundRows()">清空</button>
+      </div>
+    </div>
+  `;
+}
+function addInboundRow() {
+  const list = document.getElementById('inboundList');
+  const idx = list.children.length;
+  list.insertAdjacentHTML('beforeend', inboundRowHtml(idx, false));
+  updateInboundCount();
+  // 焦点跳到新行的物品下拉
+  const rows = list.querySelectorAll('.batch-row');
+  if (rows[idx]) rows[idx].querySelector('.in_item').focus();
+}
+function removeInboundRow(btn) {
+  const row = btn.closest('.batch-row');
+  row.remove();
+  // 重新索引
+  document.querySelectorAll('#inboundList .batch-row').forEach((r, i) => {
+    r.setAttribute('data-idx', i);
+    r.querySelector('.idx').textContent = '#' + (i + 1);
+    // 第一行不显示删除按钮
+    const delBtn = r.querySelector('.del');
+    if (i === 0 && delBtn) delBtn.remove();
+  });
+  updateInboundCount();
+}
+function resetInboundRows() {
+  document.getElementById('inboundList').innerHTML = inboundRowHtml(0, true);
+  updateInboundCount();
+}
+function updateInboundCount() {
+  const c = document.querySelectorAll('#inboundList .batch-row').length;
+  const el = document.getElementById('inboundCount');
+  if (el) el.textContent = c;
+}
 async function doInbound() {
-  const data = {
-    itemId: document.getElementById('in_item').value,
-    qty: Number(document.getElementById('in_qty').value),
-    remark: document.getElementById('in_remark').value.trim(),
-  };
-  if (!data.qty || data.qty <= 0) return toast('请填写入库数量', 'warning');
+  const rows = Array.from(document.querySelectorAll('#inboundList .batch-row'));
+  const items = [];
+  for (const row of rows) {
+    const itemId = row.querySelector('.in_item').value;
+    const qty = Number(row.querySelector('.in_qty').value);
+    const remark = row.querySelector('.in_remark').value.trim();
+    if (!qty || qty <= 0) {
+      row.querySelector('.in_qty').focus();
+      return toast('请填写每一行的数量', 'warning');
+    }
+    items.push({ itemId, qty, remark });
+  }
+  if (items.length === 0) return toast('请至少添加一种入库物品', 'warning');
   try {
-    const r = await api('/inbound', 'POST', data);
-    toast(`入库成功！${r.name} 从 ${r.before} → ${r.after} ${r.unit}`, 'success');
+    const r = await api('/inbound', 'POST', { items });
+    if (items.length === 1) {
+      const x = r.results[0];
+      toast(`入库成功！${x.name} 从 ${x.before} → ${x.after} ${x.unit}`, 'success');
+    } else {
+      toast(`批量入库成功！共 ${r.count} 种物品`, 'success');
+    }
+    resetInboundRows();
     await refreshState();
     renderTab(STATE.tab);
   } catch (e) { toast(e.message, 'error'); }
@@ -648,10 +740,10 @@ async function doInbound() {
 function quickInbound(id) {
   switchTab('inbound');
   setTimeout(() => {
-    const sel = document.getElementById('in_item');
+    const sel = document.querySelector('#inboundList .batch-row .in_item');
     if (sel) {
       sel.value = id;
-      document.getElementById('in_qty')?.focus();
+      document.querySelector('#inboundList .in_qty')?.focus();
     }
   }, 100);
 }
@@ -666,25 +758,21 @@ function renderApply() {
   ).join('');
   return `
     <div class="card">
-      <h2>📤 提交申请</h2>
-      <div class="row"><label>类型</label>
-        <select id="ap_type" onchange="toggleApplyForm()">
-          <option value="out">出库</option>
-          <option value="damage">报损</option>
-          <option value="buy">采买</option>
+      <h2>📤 提交申请 <span class="text-light" style="font-size:13px;font-weight:400">（支持一次申请多种）</span></h2>
+      <div class="flex mb">
+        <label style="font-size:13px;color:var(--text-light)">类型：</label>
+        <select id="ap_type" onchange="switchApplyType()" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px">
+          <option value="out">📤 出库</option>
+          <option value="damage">💔 报损</option>
+          <option value="buy">🛒 采买</option>
         </select>
       </div>
-      <div id="applyFormItem">
-        <div class="row"><label>物品</label><select id="ap_item">${itemOpts}</select></div>
+      <div id="applyList" class="batch-list">${applyRowHtml(0, 'out', true)}</div>
+      <button type="button" class="batch-add" onclick="addApplyRow()">＋ 添加一种物品</button>
+      <div class="btn-row">
+        <button class="btn" onclick="submitApply()">✓ 提交申请（共 <span id="applyCount">1</span> 种）</button>
+        <button type="button" class="btn ghost small" onclick="resetApplyRows()">清空</button>
       </div>
-      <div id="applyFormBuy" style="display:none">
-        <div class="row"><label>物品名</label><input id="ap_buy_name" placeholder="新物品名"></div>
-        <div class="row"><label>规格</label><input id="ap_buy_spec" placeholder="选填"></div>
-        <div class="row"><label>单位</label><input id="ap_buy_unit" value="件"></div>
-      </div>
-      <div class="row"><label>数量</label><input id="ap_qty" type="number" min="0.01" step="0.01"></div>
-      <div class="row"><label>原因</label><textarea id="ap_reason" rows="2" placeholder="如：交给小班上课用"></textarea></div>
-      <div class="btn-row"><button class="btn" onclick="submitApply()">提交申请</button></div>
       <div class="text-light mt">提交后等管理员审批。出库/报损批准后立即扣库存；采买批准后由管理员入库。</div>
     </div>
 
@@ -692,7 +780,7 @@ function renderApply() {
       <h2>📋 我的申请记录</h2>
       ${myReq.length ? `
       <div class="table-wrap"><table>
-        <thead><tr><th>时间</th><th>类型</th><th>物品</th><th>数量</th><th>状态</th><th>操作</th></tr></thead>
+        <thead><tr><th>时间</th><th>类型</th><th>物品</th><th>数量</th><th>状态</th><th>原因</th><th>操作</th></tr></thead>
         <tbody>${myReq.map(r => `
           <tr>
             <td>${fmtTime(r.time)}</td>
@@ -700,6 +788,7 @@ function renderApply() {
             <td>${escapeHtml(r.itemName)}</td>
             <td>${r.qty} ${escapeHtml(r.unit)}</td>
             <td><span class="tag ${r.status}">${statusText(r.status)}</span></td>
+            <td>${escapeHtml(r.reason || '-')}</td>
             <td>${r.status === 'pending' ? `<button class="btn small danger" onclick="cancelReq('${r.id}')">撤回</button>` : ''}</td>
           </tr>
         `).join('')}</tbody>
@@ -707,39 +796,140 @@ function renderApply() {
     </div>
   `;
 }
+
+// 批量申请行 HTML
+function applyRowHtml(idx, type, isFirst) {
+  const itemOpts = STATE.items.map(it =>
+    `<option value="${it.id}">${escapeHtml(it.name)} · 现 ${it.qty} ${escapeHtml(it.unit)}</option>`
+  ).join('');
+  // type: 'out' | 'damage' | 'buy'
+  const isBuy = type === 'buy';
+  return `
+    <div class="batch-row" data-idx="${idx}">
+      <span class="idx">#${idx + 1}</span>
+      <div class="field-row" style="display:${isBuy ? 'none' : 'flex'}">
+        <label>物品</label>
+        <select class="ap_item"><option value="">-- 请选择 --</option>${itemOpts}</select>
+      </div>
+      <div class="field-row" style="display:${isBuy ? 'flex' : 'none'}">
+        <label>物品名</label>
+        <input class="ap_buy_name" placeholder="新物品名">
+      </div>
+      <div class="field-row" style="display:${isBuy ? 'flex' : 'none'}">
+        <label>规格</label>
+        <input class="ap_buy_spec" placeholder="选填">
+      </div>
+      <div class="field-row" style="display:${isBuy ? 'flex' : 'none'}">
+        <label>单位</label>
+        <input class="ap_buy_unit" value="件">
+      </div>
+      <div class="field-row">
+        <label>数量</label>
+        <input class="ap_qty" type="number" min="0.01" step="0.01" placeholder="如：5">
+      </div>
+      <div class="field-row">
+        <label>原因<span class="optional-tag">选填</span></label>
+        <input class="ap_reason" placeholder="如：小班上课用">
+      </div>
+      ${isFirst ? '' : `<button type="button" class="del" onclick="removeApplyRow(this)">✕ 删除此行</button>`}
+    </div>
+  `;
+}
+function switchApplyType() {
+  const t = document.getElementById('ap_type').value;
+  document.querySelectorAll('#applyList .batch-row').forEach((r, i) => {
+    const isBuy = (t === 'buy');
+    r.querySelectorAll('.field-row').forEach(fr => fr.style.display = '');
+    r.querySelector('.ap_item')?.closest('.field-row').style.display = isBuy ? 'none' : '';
+    r.querySelector('.ap_buy_name')?.closest('.field-row').style.display = isBuy ? '' : 'none';
+    r.querySelector('.ap_buy_spec')?.closest('.field-row').style.display = isBuy ? '' : 'none';
+    r.querySelector('.ap_buy_unit')?.closest('.field-row').style.display = isBuy ? '' : 'none';
+  });
+}
+function addApplyRow() {
+  const list = document.getElementById('applyList');
+  const idx = list.children.length;
+  const t = document.getElementById('ap_type').value;
+  list.insertAdjacentHTML('beforeend', applyRowHtml(idx, t, false));
+  updateApplyCount();
+  const rows = list.querySelectorAll('.batch-row');
+  if (rows[idx]) {
+    const firstInput = rows[idx].querySelector(t === 'buy' ? '.ap_buy_name' : '.ap_item');
+    if (firstInput) firstInput.focus();
+  }
+}
+function removeApplyRow(btn) {
+  const row = btn.closest('.batch-row');
+  row.remove();
+  document.querySelectorAll('#applyList .batch-row').forEach((r, i) => {
+    r.setAttribute('data-idx', i);
+    r.querySelector('.idx').textContent = '#' + (i + 1);
+    const delBtn = r.querySelector('.del');
+    if (i === 0 && delBtn) delBtn.remove();
+  });
+  updateApplyCount();
+}
+function resetApplyRows() {
+  const t = document.getElementById('ap_type').value;
+  document.getElementById('applyList').innerHTML = applyRowHtml(0, t, true);
+  updateApplyCount();
+}
+function updateApplyCount() {
+  const c = document.querySelectorAll('#applyList .batch-row').length;
+  const el = document.getElementById('applyCount');
+  if (el) el.textContent = c;
+}
 function statusText(s) {
   return { pending: '待审批', approved: '已批准', rejected: '已驳回', done: '已完成' }[s] || s;
 }
-function toggleApplyForm() {
-  const t = document.getElementById('ap_type').value;
-  document.getElementById('applyFormItem').style.display = (t === 'buy') ? 'none' : '';
-  document.getElementById('applyFormBuy').style.display = (t === 'buy') ? '' : 'none';
-}
 async function submitApply() {
   const type = document.getElementById('ap_type').value;
-  const qty = Number(document.getElementById('ap_qty').value);
-  const reason = document.getElementById('ap_reason').value.trim();
-  if (!qty || qty <= 0) return toast('请填写数量', 'warning');
-  try {
+  const rows = Array.from(document.querySelectorAll('#applyList .batch-row'));
+  if (rows.length === 0) return toast('请至少添加一种申请', 'warning');
+
+  // 收集所有行
+  const requests = [];
+  const buyItems = [];
+  for (const row of rows) {
+    const qty = Number(row.querySelector('.ap_qty').value);
+    if (!qty || qty <= 0) {
+      row.querySelector('.ap_qty').focus();
+      return toast('请填写每一行的数量', 'warning');
+    }
+    const reason = row.querySelector('.ap_reason').value.trim();
     if (type === 'buy') {
-      const name = document.getElementById('ap_buy_name').value.trim();
-      if (!name) return toast('请填写采买物品名', 'warning');
-      await api('/buy', 'POST', {
+      const name = row.querySelector('.ap_buy_name').value.trim();
+      if (!name) {
+        row.querySelector('.ap_buy_name').focus();
+        return toast('请填写需要采买的物品名', 'warning');
+      }
+      buyItems.push({
         itemName: name,
-        spec: document.getElementById('ap_buy_spec').value.trim(),
-        unit: document.getElementById('ap_buy_unit').value.trim(),
+        spec: row.querySelector('.ap_buy_spec').value.trim(),
+        unit: row.querySelector('.ap_buy_unit').value.trim() || '件',
         qty, reason,
       });
     } else {
-      await api('/req', 'POST', {
-        type,
-        itemId: document.getElementById('ap_item').value,
-        qty, reason,
-      });
+      const itemId = row.querySelector('.ap_item').value;
+      if (!itemId) {
+        row.querySelector('.ap_item').focus();
+        return toast('请选择物品', 'warning');
+      }
+      requests.push({ type, itemId, qty, reason });
     }
-    toast('申请已提交，等管理员审批', 'success');
-    document.getElementById('ap_qty').value = '';
-    document.getElementById('ap_reason').value = '';
+  }
+
+  try {
+    let totalCount = 0;
+    if (type === 'buy') {
+      const r = await api('/buy', 'POST', { items: buyItems });
+      totalCount = r.count;
+    } else {
+      const r = await api('/req', 'POST', { requests });
+      totalCount = r.count;
+    }
+    toast(`已提交 ${totalCount} 种申请，等管理员审批`, 'success');
+    resetApplyRows();
     await refreshState();
     renderTab(STATE.tab);
   } catch (e) { toast(e.message, 'error'); }
