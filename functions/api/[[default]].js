@@ -335,14 +335,6 @@ export async function onRequest(context) {
 
 
 
-  /* ---------- POST /api/_wipe_all 清空所有数据（一次性，用完即删） ---------- */
-  if (path === '/api/_wipe_all' && method === 'POST') {
-    if (String(body.confirm || '') !== 'WIPE') return ERR('请传 confirm=WIPE 确认');
-    const fresh = emptyDb();
-    await saveDb(kv, fresh);
-    return json({ ok: true, msg: '已清空，回到未初始化状态' });
-  }
-
   /* ---------- POST /api/setup 初始化管理员 ---------- */
   if (path === '/api/setup' && method === 'POST') {
     if (db.users.length > 0) return json({ error: '系统已初始化，请直接登录', needLogin: true }, 400);
