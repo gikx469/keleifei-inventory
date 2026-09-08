@@ -333,40 +333,7 @@ export async function onRequest(context) {
     });
   }
 
-  /* ---------- POST /api/_normalize_schema 修字段格式（管理员） ---------- */
-  if (path === '/api/_normalize_schema' && method === 'POST') {
-    if (!user) return needLogin();
-    if (!isAdmin(user)) return json({ error: '需要管理员权限' }, 403);
-    const S = v => (v == null ? '' : String(v));
-    const typeMap = { '入库': 'in', '出库': 'out', '报损': 'damage', '采购': 'buy', '采买': 'buy' };
-    let fixed = { items: 0, logs: 0, users: 0, removed: 0 };
 
-    // 1. items: stock -> qty
-    for (const it of db.items) {
-      if (it.qty == null && it.stock != null) { it.qty = Number(it.stock) || 0; delete it.stock; fixed.items++; }
-      it.createdAt = S(it.createdAt);
-      if (!it.id) it.id = uid();
-    }
-
-    // 2. logs: 中文字段映射
-    for (const l of db.logs) {
-      if (l.ts && !l.time) { l.time = new Date(Number(l.ts)).toISOString().slice(0, 19).replace('T', ' '); delete l.ts; fixed.logs++; }
-      if (l.operator && !l.person) { l.person = l.operator; delete l.operator; }
-      if (l.note !== undefined && l.remark === undefined) { l.remark = l.note; delete l.note; }
-      if (typeMap[l.type]) l.type = typeMap[l.type];
-      if (!l.id) l.id = uid();
-      l.time = S(l.time);
-    }
-
-    // 3. users: 删乱码账号
-    const before = db.users.length;
-    db.users = db.users.filter(u => !/[^\u4e00-\u9fa5a-zA-Z0-9]/.test(u.name));
-    fixed.removed = before - db.users.length;
-    for (const u of db.users) { u.createdAt = S(u.createdAt); }
-
-    await saveDb(kv, db);
-    return json({ ok: true, fixed, counts: { users: db.users.length, items: db.items.length, logs: db.logs.length } });
-  }
 
   /* ---------- POST /api/setup 初始化管理员 ---------- */
   if (path === '/api/setup' && method === 'POST') {
