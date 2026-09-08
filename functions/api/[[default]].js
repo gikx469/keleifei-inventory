@@ -482,18 +482,41 @@ export async function onRequest(context) {
   if (path === '/api/inbound' && method === 'POST') {
     if (!user) return needLogin();
     if (!canIn(user)) return json({ error: '需要入库/建档权限' }, 403);
-    // 兼容单条 {itemId, qty, remark} 和批量 {items: [{itemId, qty, remark}, ...]}
+    // 兼容单条 {itemId, qty, remark} 和批量 {items: [{itemId | newName, spec, unit, minQty, qty, remark}, ...]}
+    // 每行可传 itemId（已有物品）或 newName（新物品，入库时自动建档收进基本信息）
     let items = [];
     if (Array.isArray(body.items) && body.items.length) {
       items = body.items;
-    } else if (body.itemId) {
-      items = [{ itemId: body.itemId, qty: body.qty, remark: body.remark || '' }];
+    } else if (body.itemId || body.newName) {
+      items = [{ itemId: body.itemId, newName: body.newName, spec: body.spec, unit: body.unit, minQty: body.minQty, qty: body.qty, remark: body.remark || '' }];
     }
     if (items.length === 0) return ERR('请至少添加一种入库物品');
     const results = [];
     for (const row of items) {
-      const it = db.items.find(x => x.id === row.itemId);
-      if (!it) return ERR('物品不存在: ' + row.itemId);
+      let it = null;
+      let isNew = false;
+      const newName = String(row.newName || '').trim();
+      if (newName) {
+        // 新物品：若基本信息里已有同名同规格的物品则直接复用，否则自动建档
+        const spec = String(row.spec || '').trim();
+        it = db.items.find(x => x.name === newName && String(x.spec || '') === spec);
+        if (!it) {
+          isNew = true;
+          const id = uid();
+          it = {
+            id, code: 'WL' + String(db.items.length + 1).padStart(3, '0'),
+            name: newName, spec,
+            category: String(row.category || '').trim(),
+            unit: String(row.unit || '').trim() || '件',
+            qty: 0, minQty: Math.max(0, Number(row.minQty) || 0),
+            createdAt: today(),
+          };
+          db.items.push(it);
+        }
+      } else {
+        it = db.items.find(x => x.id === row.itemId);
+        if (!it) return ERR('物品不存在: ' + row.itemId);
+      }
       const qty = Number(row.qty);
       if (!qty || qty <= 0) return ERR(`「${it.name}」数量必须大于 0`);
       const before = Number(it.qty);
@@ -503,9 +526,10 @@ export async function onRequest(context) {
         id: uid(), time: nowStr(), type: 'in', itemId: it.id, itemName: it.name,
         spec: it.spec, unit: it.unit,
         before, qty, after,
-        person: user.name, remark: String(row.remark || ''),
+        person: user.name,
+        remark: (isNew ? '新物品建档入库 · ' : '') + String(row.remark || ''),
       });
-      results.push({ itemId: it.id, name: it.name, before, after, unit: it.unit });
+      results.push({ itemId: it.id, name: it.name, before, after, unit: it.unit, created: isNew });
     }
     await saveDb(kv, db);
     return json({ ok: true, count: results.length, results });
