@@ -7,20 +7,33 @@
 <title>可乐菲出入库明细</title>
 <style>
 :root {
-  --primary: #4A90E2;
-  --primary-dark: #357ABD;
-  --primary-light: #E3F2FD;
-  --success: #52C41A;
-  --warning: #FAAD14;
-  --danger: #F5222D;
-  --bg: #F5F7FA;
+  /* 主色：冰蓝（薛之谦演唱会灯海色） */
+  --primary: #7EC8E3;
+  --primary-dark: #4FA8C9;
+  --primary-light: #E0F4FB;
+  /* 辅助色（浅色可爱系） */
+  --mint: #B8E6D9;
+  --mint-dark: #6EC6AE;
+  --pink: #FFD6E0;
+  --pink-dark: #F2A5BC;
+  --lavender: #DCD3F0;
+  --lavender-dark: #A88FD8;
+  --cream: #FFF3D6;
+  --cream-dark: #F5C86B;
+  --peach: #FFE0CC;
+  --peach-dark: #F0A877;
+
+  --success: #6EC6AE;
+  --warning: #F5C86B;
+  --danger: #F2A5BC;
+  --bg: #FAFCFE;
   --card: #FFFFFF;
-  --text: #2C3E50;
-  --text-light: #7F8C8D;
-  --border: #E8ECF0;
-  --radius: 10px;
-  --shadow: 0 2px 8px rgba(0,0,0,0.06);
-  --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
+  --text: #4A5568;
+  --text-light: #8FA3B8;
+  --border: #E5EEF5;
+  --radius: 16px;
+  --shadow: 0 2px 12px rgba(126, 200, 227, 0.08);
+  --shadow-lg: 0 8px 24px rgba(126, 200, 227, 0.18);
 }
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 html, body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
@@ -30,22 +43,73 @@ input, select, textarea { font-family: inherit; font-size: inherit; color: inher
 .app { max-width: 1100px; margin: 0 auto; padding: 12px; min-height: 100vh; }
 
 /* ---------- 顶部 ---------- */
-.header { background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-  color: #fff; padding: 16px 18px; border-radius: var(--radius);
-  box-shadow: var(--shadow); margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
-.header h1 { font-size: 18px; font-weight: 600; }
+.header { background: linear-gradient(135deg, #A8DCF0 0%, #7EC8E3 50%, #B8E6D9 100%);
+  color: #fff; padding: 18px 20px; border-radius: 20px;
+  box-shadow: var(--shadow-lg); margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+  position: relative; overflow: hidden; }
+.header::before { content: '☁️'; position: absolute; right: -10px; top: -15px; font-size: 80px; opacity: 0.2; }
+.header::after { content: '✨'; position: absolute; right: 60px; bottom: 5px; font-size: 24px; opacity: 0.4; }
+.header h1 { font-size: 19px; font-weight: 700; letter-spacing: 0.5px; text-shadow: 0 1px 3px rgba(79,168,201,0.2); }
 .header .me { font-size: 13px; opacity: 0.95; }
 .header .me b { font-weight: 600; }
-.header button.logout { background: rgba(255,255,255,0.2); color: #fff; padding: 6px 14px; border-radius: 16px; font-size: 13px; }
+.header button.logout { background: rgba(255,255,255,0.3); color: #fff; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 500; backdrop-filter: blur(4px); }
+.header button.logout:hover { background: rgba(255,255,255,0.45); }
 
-/* ---------- 标签栏 ---------- */
-.tabs { display: flex; gap: 6px; overflow-x: auto; background: var(--card);
-  padding: 6px; border-radius: var(--radius); box-shadow: var(--shadow); margin-bottom: 14px; }
-.tabs::-webkit-scrollbar { display: none; }
-.tab { padding: 9px 16px; border-radius: 8px; white-space: nowrap; color: var(--text-light); font-size: 14px; font-weight: 500; transition: 0.2s; position: relative; }
-.tab.active { background: var(--primary); color: #fff; }
-.tab .badge { position: absolute; top: -2px; right: -2px; background: var(--danger); color: #fff;
-  font-size: 11px; padding: 1px 6px; border-radius: 10px; min-width: 18px; text-align: center; }
+/* ---------- 返回工作台按钮 ---------- */
+.back-home { display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px;
+  background: var(--card); color: var(--primary-dark); border-radius: 20px; font-size: 13px;
+  font-weight: 500; box-shadow: var(--shadow); margin-bottom: 12px; border: 1px solid var(--border); }
+.back-home:hover { background: var(--primary-light); }
+
+/* ---------- 工作台（首页宫格） ---------- */
+.workbench { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 16px; }
+@media (min-width: 600px) { .workbench { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 900px) { .workbench { grid-template-columns: repeat(4, 1fr); } }
+.wb-card { background: var(--card); border-radius: 20px; padding: 18px 14px;
+  box-shadow: var(--shadow); cursor: pointer; transition: 0.25s;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  border: 2px solid transparent; position: relative; overflow: hidden; }
+.wb-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); }
+.wb-card:active { transform: translateY(-1px); }
+.wb-card .icon { width: 52px; height: 52px; border-radius: 16px; display: flex; align-items: center; justify-content: center;
+  font-size: 26px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+.wb-card .name { font-size: 14px; font-weight: 600; color: var(--text); }
+.wb-card .desc { font-size: 11px; color: var(--text-light); text-align: center; }
+.wb-card .badge-dot { position: absolute; top: 10px; right: 10px; background: var(--danger); color: #fff;
+  font-size: 11px; padding: 2px 8px; border-radius: 12px; font-weight: 600; box-shadow: 0 2px 6px rgba(242,165,188,0.4); }
+/* 卡片配色变体 */
+.wb-card.c-blue .icon { background: linear-gradient(135deg, #E0F4FB, #B8E0F0); color: #4FA8C9; }
+.wb-card.c-mint .icon { background: linear-gradient(135deg, #E0F5EE, #B8E6D9); color: #6EC6AE; }
+.wb-card.c-pink .icon { background: linear-gradient(135deg, #FFE9EF, #FFD6E0); color: #F2A5BC; }
+.wb-card.c-lavender .icon { background: linear-gradient(135deg, #EFEAF8, #DCD3F0); color: #A88FD8; }
+.wb-card.c-cream .icon { background: linear-gradient(135deg, #FFF8E5, #FFF3D6); color: #F5C86B; }
+.wb-card.c-peach .icon { background: linear-gradient(135deg, #FFF0E5, #FFE0CC); color: #F0A877; }
+.wb-card:hover.c-blue { border-color: #B8E0F0; }
+.wb-card:hover.c-mint { border-color: #B8E6D9; }
+.wb-card:hover.c-pink { border-color: #FFD6E0; }
+.wb-card:hover.c-lavender { border-color: #DCD3F0; }
+.wb-card:hover.c-cream { border-color: #FFF3D6; }
+.wb-card:hover.c-peach { border-color: #FFE0CC; }
+
+/* 工作台统计条 */
+.wb-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+.wb-stat { background: var(--card); padding: 14px 10px; border-radius: 16px; text-align: center;
+  box-shadow: var(--shadow); border-top: 3px solid var(--primary); }
+.wb-stat.s-mint { border-top-color: var(--mint-dark); }
+.wb-stat.s-pink { border-top-color: var(--pink-dark); }
+.wb-stat .num { font-size: 22px; font-weight: 700; color: var(--primary-dark); }
+.wb-stat.s-mint .num { color: var(--mint-dark); }
+.wb-stat.s-pink .num { color: var(--pink-dark); }
+.wb-stat .lbl { font-size: 12px; color: var(--text-light); margin-top: 2px; }
+
+/* 工作台欢迎条 */
+.wb-hello { background: linear-gradient(135deg, #FFF0E5, #FFE9EF); border-radius: 18px;
+  padding: 14px 18px; margin-bottom: 14px; box-shadow: var(--shadow);
+  color: #6B4E5C; font-size: 14px; display: flex; align-items: center; gap: 10px; }
+.wb-hello .wave { font-size: 22px; }
+
+/* ---------- 标签栏（隐藏，改成工作台导航） ---------- */
+.tabs { display: none; }
 
 /* ---------- 卡片 ---------- */
 .card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; margin-bottom: 12px; }
@@ -123,14 +187,14 @@ tr:hover td { background: #FAFBFC; }
 
 /* ---------- 状态徽章 ---------- */
 .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
-.tag.in { background: #E8F5E9; color: #2E7D32; }
-.tag.out { background: #FFEBEE; color: #C62828; }
-.tag.damage { background: #FFF3E0; color: #E65100; }
-.tag.init { background: #E3F2FD; color: #1565C0; }
-.tag.buy { background: #F3E5F5; color: #6A1B9A; }
-.tag.pending { background: #FFF3E0; color: #E65100; }
-.tag.approved { background: #E8F5E9; color: #2E7D32; }
-.tag.rejected { background: #FFEBEE; color: #C62828; }
+.tag.in { background: #E0F5EE; color: #4EA88A; }
+.tag.out { background: #FFE9EF; color: #E08BA0; }
+.tag.damage { background: #FFF3E0; color: #E89B5A; }
+.tag.init { background: #E0F4FB; color: #4FA8C9; }
+.tag.buy { background: #EFEAF8; color: #A88FD8; }
+.tag.pending { background: #FFF3E0; color: #E89B5A; }
+.tag.approved { background: #E0F5EE; color: #4EA88A; }
+.tag.rejected { background: #FFE9EF; color: #E08BA0; }
 .tag.done { background: #E3F2FD; color: #1565C0; }
 
 /* ---------- 诊断面板 ---------- */
@@ -380,15 +444,8 @@ function renderApp() {
   const isAdmin = role === 'admin';
   const canIn = role === 'admin' || role === 'authorized';
 
-  const tabs = [
-    { id: 'dashboard', name: '📊 概览' },
-    { id: 'items', name: '📦 物品' },
-    ...(canIn ? [{ id: 'inbound', name: '📥 入库' }] : []),
-    { id: 'apply', name: '📤 申请' },
-    ...(isAdmin ? [{ id: 'approve', name: '✅ 审批', badge: STATE.pendingCount }] : []),
-    { id: 'logs', name: '📋 台账' },
-    { id: 'settings', name: '⚙️ 设置' },
-  ];
+  // 默认进工作台
+  if (!STATE.tab || STATE.tab === 'dashboard') STATE.tab = 'home';
 
   document.getElementById('root').innerHTML = `
     <div class="app">
@@ -402,14 +459,6 @@ function renderApp() {
         <button class="logout" onclick="doLogout()">退出登录</button>
       </div>
 
-      <div class="tabs" id="tabs">
-        ${tabs.map(t => `
-          <div class="tab ${STATE.tab === t.id ? 'active' : ''}" onclick="switchTab('${t.id}')">
-            ${t.name}${t.badge ? `<span class="badge">${t.badge}</span>` : ''}
-          </div>
-        `).join('')}
-      </div>
-
       <div id="tabBody"></div>
     </div>
   `;
@@ -421,55 +470,96 @@ function roleText(r) {
 }
 function switchTab(id) {
   STATE.tab = id;
-  // 重新渲染 tabs 高亮
-  document.querySelectorAll('#tabs .tab').forEach(t => t.classList.remove('active'));
-  document.querySelector(`#tabs .tab[onclick*="${id}"]`)?.classList.add('active');
   renderTab(id);
+  // 切到子页时滚动到顶
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function renderTab(id) {
   const body = document.getElementById('tabBody');
   if (!body) return;
-  if (id === 'dashboard') body.innerHTML = renderDashboard();
-  else if (id === 'items') body.innerHTML = renderItems();
-  else if (id === 'inbound') body.innerHTML = renderInbound();
-  else if (id === 'apply') body.innerHTML = renderApply();
-  else if (id === 'approve') body.innerHTML = renderApprove();
-  else if (id === 'logs') body.innerHTML = renderLogs();
-  else if (id === 'settings') body.innerHTML = renderSettings();
+  // 子页加返回按钮
+  const backBtn = (id !== 'home') ? `<button class="back-home" onclick="switchTab('home')">🏠 返回工作台</button>` : '';
+  let html = '';
+  if (id === 'home') html = renderHome();
+  else if (id === 'items') html = renderItems();
+  else if (id === 'inbound') html = renderInbound();
+  else if (id === 'apply') html = renderApply();
+  else if (id === 'approve') html = renderApprove();
+  else if (id === 'logs') html = renderLogs();
+  else if (id === 'settings') html = renderSettings();
+  body.innerHTML = backBtn + html;
 }
 
 /* ============================================================
- * 📊 概览
+ * 🏠 工作台（首页宫格）
  * ============================================================ */
-function renderDashboard() {
+function renderHome() {
   const items = STATE.items;
   const total = items.length;
   const lowStock = items.filter(i => Number(i.qty) <= Number(i.minQty) && Number(i.minQty) > 0);
   const outStock = items.filter(i => Number(i.qty) === 0);
   const recent = STATE.logs.slice(0, 5);
   const pendingMine = STATE.requests.filter(r => r.applicant === STATE.me.name && r.status === 'pending');
-  const canIn = STATE.me.role === 'admin' || STATE.me.role === 'authorized';
+  const role = STATE.me.role;
+  const isAdmin = role === 'admin';
+  const canIn = role === 'admin' || role === 'authorized';
+  const hour = new Date().getHours();
+  const greet = hour < 6 ? '夜深了' : hour < 12 ? '早上好' : hour < 14 ? '中午好' : hour < 18 ? '下午好' : '晚上好';
+
+  // 宫格入口
+  const cards = [
+    { id: 'items', icon: '📦', name: '物品清单', desc: `共 ${total} 种`, color: 'c-blue', show: true },
+    { id: 'inbound', icon: '📥', name: '入库', desc: '新货进仓', color: 'c-mint', show: canIn },
+    { id: 'apply', icon: '📤', name: '提交申请', desc: '出库 / 报损 / 采买', color: 'c-pink', show: true },
+    { id: 'approve', icon: '✅', name: '审批', desc: STATE.pendingCount ? `${STATE.pendingCount} 条待审` : '无待审', color: 'c-lavender', show: isAdmin, badge: STATE.pendingCount },
+    { id: 'logs', icon: '📋', name: '台账', desc: '出入库流水', color: 'c-cream', show: true },
+    { id: 'settings', icon: '⚙️', name: '设置', desc: '账号与数据', color: 'c-peach', show: true },
+  ].filter(c => c.show);
 
   return `
-    <div class="card">
-      <h2>📊 数据概览</h2>
-      <div class="list">
-        <div class="item-card"><div class="name">物品种类</div><div class="qty">${total}<small>件</small></div></div>
-        <div class="item-card ${lowStock.length ? 'warn' : ''}"><div class="name">库存预警</div><div class="qty">${lowStock.length}<small>件</small></div></div>
-        <div class="item-card ${outStock.length ? 'out' : ''}"><div class="name">已用完</div><div class="qty">${outStock.length}<small>件</small></div></div>
-        <div class="item-card"><div class="name">最近流水</div><div class="qty">${STATE.logs.length}<small>条</small></div></div>
+    <div class="wb-hello">
+      <span class="wave">👋</span>
+      <div>
+        <b>${greet}，${escapeHtml(STATE.me.name)}</b>
+        <div style="font-size:12px;opacity:0.8;margin-top:2px;">今天也要好好管理库存哦 ✨</div>
       </div>
     </div>
 
-    ${lowStock.length ? `
+    <div class="wb-stats">
+      <div class="wb-stat">
+        <div class="num">${total}</div>
+        <div class="lbl">物品种类</div>
+      </div>
+      <div class="wb-stat s-mint">
+        <div class="num">${STATE.logs.length}</div>
+        <div class="lbl">流水记录</div>
+      </div>
+      <div class="wb-stat s-pink">
+        <div class="num">${lowStock.length + outStock.length}</div>
+        <div class="lbl">库存预警</div>
+      </div>
+    </div>
+
+    <div class="workbench">
+      ${cards.map(c => `
+        <div class="wb-card ${c.color}" onclick="switchTab('${c.id}')">
+          ${c.badge ? `<span class="badge-dot">${c.badge}</span>` : ''}
+          <div class="icon">${c.icon}</div>
+          <div class="name">${c.name}</div>
+          <div class="desc">${c.desc}</div>
+        </div>
+      `).join('')}
+    </div>
+
+    ${lowStock.length || outStock.length ? `
     <div class="card">
-      <h2>⚠️ 库存预警（${lowStock.length}）</h2>
+      <h2>⚠️ 库存预警（${lowStock.length + outStock.length}）</h2>
       <div class="list">
-        ${lowStock.map(it => `
-          <div class="item-card warn">
+        ${[...outStock.map(it => ({...it, _out: true})), ...lowStock].map(it => `
+          <div class="item-card ${it._out ? 'out' : 'warn'}">
             <div class="name">${escapeHtml(it.name)}</div>
-            <div class="meta">${escapeHtml(it.spec || '')} ${escapeHtml(it.unit)} · 预警线 ${it.minQty}</div>
+            <div class="meta">${escapeHtml(it.spec || '')} ${escapeHtml(it.unit)}${it._out ? ' · 已用完' : ` · 预警线 ${it.minQty}`}</div>
             <div class="qty">${it.qty}<small>${escapeHtml(it.unit)}</small></div>
             ${canIn ? `<div class="btn-row"><button class="btn small" onclick="quickInbound('${it.id}')">📥 快速入库</button></div>` : ''}
           </div>
@@ -477,9 +567,9 @@ function renderDashboard() {
       </div>
     </div>` : ''}
 
+    ${recent.length ? `
     <div class="card">
-      <h2>📋 最近 5 条流水</h2>
-      ${recent.length ? `
+      <h2>📋 最近流水</h2>
       <div class="table-wrap"><table>
         <thead><tr><th>时间</th><th>类型</th><th>物品</th><th>数量</th><th>操作人</th></tr></thead>
         <tbody>${recent.map(l => `
@@ -490,8 +580,11 @@ function renderDashboard() {
             <td>${l.type === 'in' || l.type === 'init' ? '+' : '-'}${l.qty} ${escapeHtml(l.unit)}</td>
             <td>${escapeHtml(l.person)}</td>
           </tr>`).join('')}</tbody>
-      </table></div>` : '<div class="empty">暂无流水</div>'}
-    </div>
+      </table></div>
+      <div style="text-align:center;margin-top:10px;">
+        <button class="btn small ghost" onclick="switchTab('logs')">查看全部 →</button>
+      </div>
+    </div>` : ''}
 
     ${pendingMine.length ? `
     <div class="card">
