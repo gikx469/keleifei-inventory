@@ -862,8 +862,8 @@ function toggleInboundNew(sel) {
 function renderInbound() {
   return `
     <div class="card">
-      <h2>📥 直接入库（无需审批）</h2>
-      <div class="text-light mb">入库会立即增加数量并记录流水。可一次录入多种物品；物品下拉里选「➕ 新物品」可直接入基本信息里还没有的东西，入库完自动建档。仅管理员和授权人员可操作。</div>
+      <h2>📥 入库</h2>
+      <div class="text-light mb">管理员入库立即生效并记录流水；授权人员提交后等管理员审批。可一次录入多种物品；物品下拉里选「➕ 新物品」可直接入基本信息里还没有的东西，入库完自动建档。</div>
       <div id="inboundList" class="batch-list">${inboundRowHtml(0, true)}</div>
       <button type="button" class="batch-add" onclick="addInboundRow()">＋ 添加一种物品</button>
       <div class="btn-row">
@@ -934,8 +934,14 @@ async function doInbound() {
   }
   if (items.length === 0) return toast('请至少添加一种入库物品', 'warning');
   try {
-    const r = await api('/inbound', 'POST', { items });
-    if (items.length === 1) {
+    let r = await api('/inbound', 'POST', { items });
+    if (r.needConfirm) {
+      if (!confirm(r.msg + '\n\n仍要继续提交吗？')) return;
+      r = await api('/inbound', 'POST', { items, confirm: true });
+    }
+    if (r.pending) {
+      toast(`入库申请已提交（${r.count} 种），等管理员审批`, 'success');
+    } else if (items.length === 1) {
       const x = r.results[0];
       toast(`入库成功！${x.name} 从 ${x.before} → ${x.after} ${x.unit}${x.created ? '（已自动建档）' : ''}`, 'success');
     } else {
@@ -965,7 +971,7 @@ function quickInbound(id) {
 function renderApply() {
   const myReq = STATE.requests.filter(r => r.applicant === STATE.me.name);
   const itemOpts = STATE.items.map(it =>
-    `<option value="${it.id}">${escapeHtml(it.name)} · 现 ${it.qty} ${escapeHtml(it.unit)}</option>`
+    `<option value="${it.id}">${escapeHtml(it.name)}${it.needDamage ? '（需报损）' : ''} · 现 ${it.qty} ${escapeHtml(it.unit)}</option>`
   ).join('');
   return `
     <div class="card">
@@ -984,7 +990,7 @@ function renderApply() {
         <button class="btn" onclick="submitApply()">✓ 提交申请（共 <span id="applyCount">1</span> 种）</button>
         <button type="button" class="btn ghost small" onclick="resetApplyRows()">清空</button>
       </div>
-      <div class="text-light mt">提交后等管理员审批。出库/报损批准后立即扣库存；采买可填基本信息里还没有的新物品，批准后由管理员入库并自动建档。</div>
+      <div class="text-light mt">授权人员提交后等管理员审批，批准后立即扣库存；管理员出库/报损免审批直接生效。需报损的物品只能用「💔 报损」方式出库；采买可填基本信息里还没有的新物品，批准后由管理员入库并自动建档。</div>
     </div>
 
     <div class="card">
@@ -1131,6 +1137,13 @@ async function submitApply() {
         row.querySelector('.ap_item').focus();
         return toast('请选择物品', 'warning');
       }
+      // 需报损的物品不可普通出库，必须走「报损」
+      if (type === 'out') {
+        const it0 = STATE.items.find(x => x.id === itemId);
+        if (it0 && it0.needDamage) {
+          return toast(`「${it0.name}」是需要报损的物品，请把类型切换为「💔 报损」`, 'warning');
+        }
+      }
       requests.push({ type, itemId, qty, reason, photo: '' });
     }
   }
@@ -1141,8 +1154,19 @@ async function submitApply() {
       const r = await api('/buy', 'POST', { items: buyItems });
       totalCount = r.count;
     } else {
-      const r = await api('/req', 'POST', { requests });
+      let r = await api('/req', 'POST', { requests });
+      if (r.needConfirm) {
+        if (!confirm(r.msg + '\n\n仍要继续提交吗？')) return;
+        r = await api('/req', 'POST', { requests, confirm: true });
+      }
       totalCount = r.count;
+      if (r.direct) {
+        toast(`${type === 'damage' ? '报损' : '出库'}成功！共 ${totalCount} 种物品（管理员免审批，库存已更新）`, 'success');
+        resetApplyRows();
+        await refreshState();
+        renderTab(STATE.tab);
+        return;
+      }
     }
     toast(`已提交 ${totalCount} 种申请，等管理员审批`, 'success');
     resetApplyRows();
@@ -1180,7 +1204,8 @@ function renderApprove() {
             <div class="text-light">${fmtTime(r.time)}</div>
           </div>
           <div class="text-light mb">申请人：<b>${escapeHtml(r.applicant)}</b> · 原因：${escapeHtml(r.reason || '无')}</div>
-          ${r.type !== 'buy' && r.currentQty != null ? `<div class="text-light mb">当前库存：${r.currentQty} ${escapeHtml(r.unit)}</div>` : ''}
+          ${r.type !== 'buy' && r.currentQty != null ? `<div class="text-light mb">当前库存：${r.currentQty} ${escapeHtml(r.unit)}${r.type === 'in' ? ' → 批准后 +' + r.qty : ' → 批准后 -' + r.qty}</div>` : ''}
+          ${r.type === 'in' && r.newItem ? `<div class="text-light mb">🆕 新物品入库（批准后自动建档：${escapeHtml(r.newItem.name)}${r.newItem.needDamage ? '，需报损' : ''}）</div>` : ''}
           ${r.photo ? `<div class="mb"><div class="text-light" style="font-size:12px;margin-bottom:4px">📸 旧物品照片（点击放大）：</div><img class="photo-preview" src="${photoUrl(r.photo)}" onclick="viewPhoto('${r.photo}')" alt="旧物品照片"></div>` : ''}
           <div class="btn-row">
             <button class="btn success" onclick="approveReq('${r.id}', 'approve')">✓ 批准</button>
