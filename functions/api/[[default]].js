@@ -196,6 +196,28 @@ function newToken() { return randHex(24); }
 function isAdmin(u) { return u && u.role === 'admin'; }
 function canIn(u) { return u && (u.role === 'admin' || u.role === 'authorized'); }
 
+// 重复提交检测：同一人本次提交内重复、已有相同待审批申请、或当天流水已有相同记录
+function findDupMsg(db, user, type, rows) {
+  const T = { in: '入库', out: '出库', damage: '报损' }[type] || type;
+  const seen = new Set();
+  for (const r of rows) {
+    const k = (r.itemId || r.name || '') + '|' + r.qty;
+    if (seen.has(k)) return `本次提交里「${r.name} × ${r.qty}」出现了多次，请确认是否写错`;
+    seen.add(k);
+  }
+  const todayStr = today();
+  for (const r of rows) {
+    const pid = r.itemId || '';
+    const dupReq = (db.requests || []).find(x => x.status === 'pending' && x.applicantId === user.id
+      && x.type === type && (x.itemId || '') === pid && Number(x.qty) === Number(r.qty));
+    if (dupReq) return `你已有一条待审批的「${dupReq.itemName} × ${r.qty}」${T}申请，请确认是否需要重复提交`;
+    const dupLog = (db.logs || []).find(l => l.type === type && l.person === user.name
+      && (l.itemId || '') === pid && Number(l.qty) === Number(r.qty) && String(l.time || '').slice(0, 10) === todayStr);
+    if (dupLog) return `你今天已经${T}过「${dupLog.itemName} × ${r.qty}」，请确认是否写错`;
+  }
+  return '';
+}
+
 /* =========================================================
  * 会话与鉴权
  * ========================================================= */
@@ -493,6 +515,56 @@ export async function onRequest(context) {
       items = [{ itemId: body.itemId, newName: body.newName, spec: body.spec, unit: body.unit, minQty: body.minQty, qty: body.qty, remark: body.remark || '' }];
     }
     if (items.length === 0) return ERR('请至少添加一种入库物品');
+
+    // 重复提交提醒（同一人当天相同物品+数量）
+    const dupRows = items.map(row => {
+      const newName = String(row.newName || '').trim();
+      const it = newName ? null : db.items.find(x => x.id === row.itemId);
+      return { itemId: newName ? '' : row.itemId, name: newName || (it ? it.name : ''), qty: Number(row.qty) };
+    });
+    const dupMsg = findDupMsg(db, user, 'in', dupRows);
+    if (dupMsg && !body.confirm) return json({ needConfirm: true, msg: dupMsg });
+
+    // 授权人员：入库需管理员审批 → 生成待审批的入库申请
+    if (!isAdmin(user)) {
+      for (const row of items) {
+        const newName = String(row.newName || '').trim();
+        let it = null;
+        if (newName) {
+          const spec0 = String(row.spec || '').trim();
+          it = db.items.find(x => x.name === newName && String(x.spec || '') === spec0);
+        } else {
+          it = db.items.find(x => x.id === row.itemId);
+          if (!it) return ERR('物品不存在: ' + row.itemId);
+        }
+        const qty = Number(row.qty);
+        if (!qty || qty <= 0) return ERR(`「${newName || (it ? it.name : '物品')}」数量必须大于 0`);
+        db.requests.push({
+          id: uid(), type: 'in',
+          itemId: it ? it.id : '',
+          itemName: newName || it.name,
+          spec: String(row.spec || '').trim() || (it ? it.spec : ''),
+          unit: (newName ? String(row.unit || '').trim() : '') || (it ? it.unit : '件'),
+          currentQty: it ? Number(it.qty) : 0,
+          qty,
+          reason: String(row.remark || '').trim(),
+          newItem: (newName && !it) ? {
+            name: newName, spec: String(row.spec || '').trim(),
+            unit: String(row.unit || '').trim() || '件',
+            minQty: Math.max(0, Number(row.minQty) || 0),
+            category: String(row.category || '').trim(),
+            needDamage: !!row.needDamage,
+          } : null,
+          applicantId: user.id, applicant: user.name,
+          time: nowStr(), status: 'pending',
+          approver: '', approveTime: '', note: '', doneTime: '', doneQty: null, doneItemId: '',
+        });
+      }
+      await saveDb(kv, db);
+      return json({ ok: true, count: items.length, pending: true });
+    }
+
+    // 管理员：免审批直接入库
     const results = [];
     for (const row of items) {
       let it = null;
@@ -601,6 +673,7 @@ export async function onRequest(context) {
       rows = [{ type: body.type, itemId: body.itemId, qty: body.qty, reason: body.reason || '', photo: body.photo || '' }];
     }
     if (rows.length === 0) return ERR('请至少添加一种申请');
+    // 校验 + 需报损物品不可普通出库（只能走报损）
     for (const row of rows) {
       const type = row.type;
       if (type !== 'out' && type !== 'damage') return ERR('类型错误（仅支持出库 / 报损）');
@@ -608,6 +681,42 @@ export async function onRequest(context) {
       if (!it) return ERR('请选择物品');
       const qty = Number(row.qty);
       if (!qty || qty <= 0) return ERR(`「${it.name}」数量必须大于 0`);
+      if (type === 'out' && it.needDamage) return ERR(`「${it.name}」是需要报损的物品，请改用「报损」方式出库`);
+    }
+    // 重复提交提醒（同一人当天相同物品+数量）
+    const dupRows = rows.map(row => {
+      const it = db.items.find(x => x.id === row.itemId);
+      return { itemId: row.itemId, name: it ? it.name : '', qty: Number(row.qty) };
+    });
+    const dupMsg = findDupMsg(db, user, rows[0].type, dupRows);
+    if (dupMsg && !body.confirm) return json({ needConfirm: true, msg: dupMsg });
+
+    // 管理员：免审批，直接扣库存生效
+    if (isAdmin(user)) {
+      const results = [];
+      for (const row of rows) {
+        const it = db.items.find(x => x.id === row.itemId);
+        const qty = Number(row.qty);
+        if (qty > Number(it.qty)) return ERR(`「${it.name}」超过当前库存（现存 ${it.qty} ${it.unit}）`);
+        const before = Number(it.qty);
+        const after = before - qty;
+        it.qty = after;
+        db.logs.push({
+          id: uid(), time: nowStr(), type: row.type, itemId: it.id, itemName: it.name,
+          spec: it.spec, unit: it.unit,
+          before, qty, after,
+          person: user.name,
+          remark: `管理员免审批 · ${String(row.reason || '').trim() || (row.type === 'out' ? '出库' : '报损')}`,
+        });
+        results.push({ itemId: it.id, name: it.name, before, after, unit: it.unit });
+      }
+      await saveDb(kv, db);
+      return json({ ok: true, count: results.length, direct: true, results });
+    }
+    for (const row of rows) {
+      const type = row.type;
+      const it = db.items.find(x => x.id === row.itemId);
+      const qty = Number(row.qty);
       if (qty > Number(it.qty)) return ERR(`「${it.name}」超过当前库存（现存 ${it.qty} ${it.unit}）`);
       // 照片字段保留兼容（不再强制：报损无需拍照）
       const photo = String(row.photo || '').trim();
@@ -688,6 +797,48 @@ export async function onRequest(context) {
     }
 
     if (action === 'approve') {
+      if (r.type === 'in') {
+        // 入库申请：批准后加库存（新物品申请则先自动建档）
+        let it = r.itemId ? db.items.find(x => x.id === r.itemId) : null;
+        if (!it && r.newItem && r.newItem.name) {
+          const nspec = String(r.newItem.spec || '');
+          it = db.items.find(x => x.name === r.newItem.name && String(x.spec || '') === nspec);
+          if (!it) {
+            it = {
+              id: uid(), code: 'WL' + String(db.items.length + 1).padStart(3, '0'),
+              name: r.newItem.name, spec: nspec,
+              category: String(r.newItem.category || '').trim(),
+              unit: String(r.newItem.unit || '').trim() || '件',
+              qty: 0, minQty: Math.max(0, Number(r.newItem.minQty) || 0),
+              needDamage: !!r.newItem.needDamage,
+              createdAt: today(),
+            };
+            db.items.push(it);
+          }
+        }
+        if (!it) {
+          r.status = 'rejected'; r.approveTime = nowStr();
+          r.approver = user.name; r.note = '物品已被删除，自动驳回';
+          await saveDb(kv, db);
+          return ERR('物品已被删除，已自动驳回');
+        }
+        const before = Number(it.qty);
+        const after = before + Number(r.qty);
+        it.qty = after;
+        db.logs.push({
+          id: uid(), time: nowStr(), type: 'in', itemId: it.id, itemName: it.name,
+          spec: it.spec, unit: it.unit,
+          before, qty: Number(r.qty), after,
+          person: r.applicant,
+          remark: `审批通过 · ${r.reason || '入库'}`,
+        });
+        r.status = 'approved';
+        r.approveTime = nowStr();
+        r.approver = user.name;
+        r.note = String(body.note || '').trim();
+        await saveDb(kv, db);
+        return json({ ok: true });
+      }
       if (r.type === 'out' || r.type === 'damage') {
         const it = db.items.find(x => x.id === r.itemId);
         if (!it) {
