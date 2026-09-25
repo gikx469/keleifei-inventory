@@ -192,6 +192,37 @@ tr:hover td { background: #FAFBFC; }
 .tag.damage { background: #FFF3E0; color: #E89B5A; }
 .tag.init { background: #E0F4FB; color: #4FA8C9; }
 .tag.buy { background: #EFEAF8; color: #A88FD8; }
+/* v4 新增样式 */
+.tag.file { background: #FDECEC; color: #D8847A; }
+.tag.stocktake { background: #E8F0F8; color: #6A93C9; }
+.tag.return { background: #E4F5E8; color: #4E9E5C; }
+.tag.purchase { background: #EFEAF8; color: #8F7ACC; }
+.tag.normout { background: #FFE9EF; color: #E08BA0; }
+.cat-block { border: 1px solid var(--border); border-radius: 12px; margin-bottom: 10px; overflow: hidden; background: #fff; }
+.cat-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; cursor: pointer; user-select: none; }
+.cat-head .cn { font-weight: 600; }
+.cat-head .cnt { font-size: 12px; color: var(--text-light); }
+.cat-body { display: none; padding: 0 10px 10px; }
+.cat-body.open { display: block; }
+.item-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 8px; }
+.ig-card { border: 1px solid var(--border); border-radius: 10px; padding: 10px; position: relative; background: #fff; }
+.ig-card .nm { font-weight: 600; font-size: 13px; line-height: 1.3; }
+.ig-card .sp { font-size: 11px; color: var(--text-light); margin-top: 2px; }
+.ig-card .qt { font-size: 20px; font-weight: 700; margin-top: 6px; }
+.ig-card .qt small { font-size: 11px; font-weight: 400; color: var(--text-light); }
+.ig-card.out { border-color: #f2c4c4; background: #fdf3f3; }
+.ig-card.warn { border-color: #f0dcb4; background: #fdf9ef; }
+.ig-card .damage-tag { position: absolute; top: 8px; right: 8px; }
+.mode-tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+.mode-tab { flex: 1; padding: 10px; text-align: center; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; font-size: 13px; color: var(--text-light); }
+.mode-tab.on { background: var(--primary-light); border-color: var(--primary); color: var(--primary-dark); font-weight: 600; }
+#scanVideo { width: 100%; max-height: 320px; border-radius: 10px; background: #000; display: none; }
+.scan-tip { font-size: 12px; color: var(--text-light); margin-top: 6px; }
+.detail-grid { display: grid; grid-template-columns: 84px 1fr; gap: 6px 10px; font-size: 13px; }
+.detail-grid .k { color: var(--text-light); }
+.stk-row { display: grid; grid-template-columns: 1fr 70px 70px 70px; gap: 6px; align-items: center; padding: 6px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
+.stk-row input { padding: 6px; border: 1px solid var(--border); border-radius: 6px; width: 100%; box-sizing: border-box; }
+.stk-head { font-weight: 600; color: var(--text-light); font-size: 12px; border-bottom: 1px solid var(--border); }
 .tag.pending { background: #FFF3E0; color: #E89B5A; }
 .tag.approved { background: #E0F5EE; color: #4EA88A; }
 .tag.rejected { background: #FFE9EF; color: #E08BA0; }
@@ -503,6 +534,7 @@ function afterLogin(state) {
   STATE.requests = state.requests;
   STATE.users = state.users || [];
   STATE.pendingCount = state.pendingCount || 0;
+  STATE.stocktakes = state.stocktakes || [];
   STATE.serverTime = state.serverTime;
   renderApp();
 }
@@ -554,6 +586,10 @@ function renderTab(id) {
   else if (id === 'inbound') html = renderInbound();
   else if (id === 'apply') html = renderApply();
   else if (id === 'approve') html = renderApprove();
+  else if (id === 'alerts') html = renderAlerts();
+  else if (id === 'staff') html = renderStaff();
+  else if (id === 'stocktake') html = renderStocktake();
+  else if (id === 'export') html = renderExport();
   else if (id === 'logs') html = renderLogs();
   else if (id === 'settings') html = renderSettings();
   body.innerHTML = backBtn + html;
@@ -565,8 +601,6 @@ function renderTab(id) {
 function renderHome() {
   const items = STATE.items;
   const total = items.length;
-  const lowStock = items.filter(i => Number(i.qty) <= Number(i.minQty) && Number(i.minQty) > 0);
-  const outStock = items.filter(i => Number(i.qty) === 0);
   const recent = STATE.logs.slice(0, 5);
   const pendingMine = STATE.requests.filter(r => r.applicant === STATE.me.name && r.status === 'pending');
   const role = STATE.me.role;
@@ -578,9 +612,13 @@ function renderHome() {
   // 宫格入口
   const cards = [
     { id: 'items', icon: '📦', name: '物品清单', desc: `共 ${total} 种`, color: 'c-blue', show: true },
-    { id: 'inbound', icon: '📥', name: '入库', desc: '新货进仓', color: 'c-mint', show: canIn },
-    { id: 'apply', icon: '📤', name: '提交申请', desc: '出库 / 报损 / 采买', color: 'c-pink', show: true },
+    { id: 'inbound', icon: '📥', name: '入库', desc: '采购 / 扫码 / 归还', color: 'c-mint', show: canIn },
+    { id: 'apply', icon: '📤', name: '出库 / 采买', desc: '领用登记', color: 'c-pink', show: true },
     { id: 'approve', icon: '✅', name: '审批', desc: STATE.pendingCount ? `${STATE.pendingCount} 条待审` : '无待审', color: 'c-lavender', show: isAdmin, badge: STATE.pendingCount },
+    { id: 'alerts', icon: '⚠️', name: '库存预警', desc: '独立专区', color: 'c-peach', show: canIn },
+    { id: 'staff', icon: '👥', name: '人员管理', desc: '操作记录', color: 'c-lavender', show: isAdmin },
+    { id: 'stocktake', icon: '📊', name: '库存盘点', desc: '账实核对', color: 'c-blue', show: isAdmin },
+    { id: 'export', icon: '📑', name: '数据导出', desc: '报表下载', color: 'c-mint', show: isAdmin },
     { id: 'logs', icon: '📋', name: '台账', desc: '出入库流水', color: 'c-cream', show: true },
     { id: 'settings', icon: '⚙️', name: '设置', desc: '账号与数据', color: 'c-peach', show: true },
   ].filter(c => c.show);
@@ -604,8 +642,8 @@ function renderHome() {
         <div class="lbl">流水记录</div>
       </div>
       <div class="wb-stat s-pink">
-        <div class="num">${lowStock.length + outStock.length}</div>
-        <div class="lbl">库存预警</div>
+        <div class="num">${CATS.length}</div>
+        <div class="lbl">分类区域</div>
       </div>
     </div>
 
@@ -619,21 +657,6 @@ function renderHome() {
         </div>
       `).join('')}
     </div>
-
-    ${lowStock.length || outStock.length ? `
-    <div class="card">
-      <h2>⚠️ 库存预警（${lowStock.length + outStock.length}）</h2>
-      <div class="list">
-        ${[...outStock.map(it => ({...it, _out: true})), ...lowStock].map(it => `
-          <div class="item-card ${it._out ? 'out' : 'warn'}">
-            <div class="name">${escapeHtml(it.name)}</div>
-            <div class="meta">${escapeHtml(it.spec || '')} ${escapeHtml(it.unit)}${it._out ? ' · 已用完' : ` · 预警线 ${it.minQty}`}</div>
-            <div class="qty">${it.qty}<small>${escapeHtml(it.unit)}</small></div>
-            ${canIn ? `<div class="btn-row"><button class="btn small" onclick="quickInbound('${it.id}')">📥 快速入库</button></div>` : ''}
-          </div>
-        `).join('')}
-      </div>
-    </div>` : ''}
 
     ${recent.length ? `
     <div class="card">
@@ -668,67 +691,134 @@ function renderHome() {
 }
 
 function typeText(t) {
-  return { in: '入库', out: '出库', damage: '报损', init: '建档', buy: '采买' }[t] || t;
+  return { in: '入库', out: '出库', damage: '报损', init: '建档', buy: '采买', file: '档案', stocktake: '盘点' }[t] || t;
+}
+// 一级分类清单
+const CATS = ['纸张区', '颜料区', '笔具区', '辅助工具区', '手工耗材区', '防护收纳区', '宣传区'];
+function catOf(it) { return CATS.includes(it.category) ? it.category : '其他'; }
+function catOptions(sel) {
+  return CATS.map(c => `<option value="${c}" ${c === sel ? 'selected' : ''}>${c}</option>`).join('') + `<option value="" ${!sel ? 'selected' : ''}>其他 / 未分类</option>`;
+}
+// 单据类型标签：活动退回 / 采购入库 / 正常出库 等
+function logTag(l) {
+  if (l.type === 'in') {
+    if (l.sub === 'return') return ['return', '活动退回'];
+    if (l.sub === 'purchase') return ['purchase', '采购入库'];
+    return ['in', '正常入库'];
+  }
+  if (l.type === 'out') return ['normout', '正常出库'];
+  if (l.type === 'damage') return ['damage', '报损出库'];
+  return [l.type, typeText(l.type)];
+}
+// 出库高频排序：近期出库越多的物品越靠前
+function outFreq(id) {
+  return STATE.logs.filter(l => (l.type === 'out' || l.type === 'damage') && l.itemId === id).length;
 }
 
 /* ============================================================
  * 📦 物品
  * ============================================================ */
 function renderItems() {
-  const canIn = STATE.me.role === 'admin' || STATE.me.role === 'authorized';
+  const isAdmin = STATE.me.role === 'admin';
   return `
     <div class="card">
       <div class="flex between">
         <h2>📦 物品清单（${STATE.items.length}）</h2>
-        ${canIn ? `<button class="btn" onclick="showAddItem()">➕ 新增物品</button>` : ''}
+        ${isAdmin ? `<button class="btn" onclick="showAddItem()">➕ 新增物品</button>` : ''}
       </div>
       <div class="row">
-        <input id="itemSearch" placeholder="搜索物品名称..." oninput="filterItems()" style="max-width: 280px;">
+        <input id="itemSearch" placeholder="🔍 输入物品名称快速检索..." oninput="filterItems()" style="max-width: 300px;">
       </div>
       <div id="itemsList">
-        ${renderItemsList(STATE.items)}
+        ${renderItemsByCat(STATE.items)}
       </div>
     </div>
   `;
 }
-function renderItemsList(items) {
-  if (!items.length) return '<div class="empty">暂无物品</div>';
-  return `<div class="list">
-    ${items.map(it => {
-      const low = Number(it.qty) <= Number(it.minQty);
-      const out = Number(it.qty) === 0;
-      return `<div class="item-card ${out ? 'out' : low ? 'warn' : ''}">
-        <div class="name">${escapeHtml(it.name)}${it.needDamage ? '<span class="damage-tag">需报损</span>' : ''} <small class="text-light">${escapeHtml(it.code)}</small></div>
-        <div class="meta">${escapeHtml(it.spec || '')} · 预警线 ${it.minQty} ${escapeHtml(it.unit)}</div>
-        <div class="qty">${it.qty}<small>${escapeHtml(it.unit)}</small></div>
-        ${canEdit() ? `<div class="btn-row">
-          <button class="btn small" onclick="showEditItem('${it.id}')">✏️ 编辑</button>
-          ${STATE.me.role === 'admin' ? `<button class="btn small danger" onclick="delItem('${it.id}')">删除</button>` : ''}
-        </div>` : ''}
-      </div>`;
-    }).join('')}
-  </div>`;
+// 按分类分组展示：点开分类显示该分类下物品实时库存，一行 2-3 个
+function renderItemsByCat(items) {
+  const groups = {};
+  for (const c of [...CATS, '其他']) groups[c] = [];
+  for (const it of items) groups[catOf(it)].push(it);
+  let html = '';
+  for (const c of Object.keys(groups)) {
+    const list = groups[c];
+    if (!list.length) continue;
+    html += `
+    <div class="cat-block">
+      <div class="cat-head" onclick="toggleCat(this)">
+        <span class="cn">📁 ${c}</span>
+        <span class="cnt">${list.length} 种物品 ▾</span>
+      </div>
+      <div class="cat-body">
+        <div class="item-grid">
+          ${list.map(it => {
+            const low = Number(it.qty) <= Number(it.minQty) && Number(it.minQty) > 0;
+            const out = Number(it.qty) === 0;
+            return `<div class="ig-card ${out ? 'out' : low ? 'warn' : ''}" onclick="showItemHistory('${it.id}')">
+              <div class="nm">${escapeHtml(it.name)}${it.needDamage ? '<span class="damage-tag">需报损</span>' : ''}</div>
+              ${it.spec ? `<div class="sp">${escapeHtml(it.spec)}</div>` : ''}
+              <div class="qt">${it.qty}<small> ${escapeHtml(it.unit)}</small></div>
+              <div class="sp">预警线 ${it.minQty}</div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+    </div>`;
+  }
+  return html || '<div class="empty">暂无物品</div>';
 }
-function canEdit() { return STATE.me.role === 'admin' || STATE.me.role === 'authorized'; }
+function toggleCat(head) {
+  const body = head.nextElementSibling;
+  body.classList.toggle('open');
+  head.querySelector('.cnt').textContent = head.querySelector('.cnt').textContent.replace(/[▾▴]/, body.classList.contains('open') ? '▴' : '▾');
+}
+// 物品履历（仅管理员）：单个物品完整库存变动流水
+function showItemHistory(id) {
+  if (STATE.me.role !== 'admin') return;
+  const it = STATE.items.find(x => x.id === id);
+  if (!it) return;
+  const rows = STATE.logs.filter(l => l.itemId === id);
+  modal(`
+    <h3>📜 ${escapeHtml(it.name)} · 库存变动流水</h3>
+    <div class="text-light mb">分类：${escapeHtml(catOf(it))} · 当前库存：${it.qty} ${escapeHtml(it.unit)} · 预警线：${it.minQty}</div>
+    ${rows.length ? `<div class="table-wrap" style="max-height:340px;overflow-y:auto"><table>
+      <thead><tr><th>时间</th><th>类型</th><th>数量</th><th>变动</th><th>操作人</th><th>备注</th></tr></thead>
+      <tbody>${rows.map(l => {
+        const tg = logTag(l);
+        return `<tr>
+          <td>${fmtTime(l.time)}</td>
+          <td><span class="tag ${tg[0]}">${tg[1]}</span></td>
+          <td>${l.type === 'file' ? '-' : (l.type === 'in' || l.type === 'init' || l.type === 'stocktake' ? '+' : '-')}${l.qty}</td>
+          <td>${l.before == null ? '-' : l.before + ' → ' + l.after}</td>
+          <td>${escapeHtml(l.person)}</td>
+          <td class="text-light">${escapeHtml(l.remark || '')}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div>` : '<div class="empty">暂无流水</div>'}
+    <div class="btn-row mt"><button class="btn ghost" onclick="this.closest('.modal-bg').remove()">关闭</button></div>
+  `);
+}
 function filterItems() {
   const q = document.getElementById('itemSearch').value.trim().toLowerCase();
   const filtered = q ? STATE.items.filter(i =>
-    i.name.toLowerCase().includes(q) || (i.spec || '').toLowerCase().includes(q)
+    i.name.toLowerCase().includes(q) || (i.spec || '').toLowerCase().includes(q) || (i.barcode || '').includes(q)
   ) : STATE.items;
-  document.getElementById('itemsList').innerHTML = renderItemsList(filtered);
+  document.getElementById('itemsList').innerHTML = renderItemsByCat(filtered);
 }
 
 function showAddItem() {
   const m = modal(`
-    <h3>➕ 新增物品</h3>
+    <h3>➕ 新增物品档案</h3>
+    <div class="row"><label>所属分类区域</label><select id="f_cat">${catOptions('')}</select></div>
     <div class="row"><label>物品名称</label><input id="f_name" placeholder="如：双面胶"></div>
-    <div class="row"><label>规格</label><input id="f_spec" placeholder="如：宽 4cm"></div>
-    <div class="row"><label>分类</label><input id="f_cat" placeholder="如：胶棒/水彩/彩纸"></div>
+    <div class="row"><label>规格<span class="optional-tag">选填</span></label><input id="f_spec" placeholder="如：宽 4cm"></div>
     <div class="row"><label>单位</label><input id="f_unit" value="件"></div>
     <div class="row"><label>期初数量</label><input id="f_init" type="number" min="0" value="0"></div>
-    <div class="row"><label>预警线</label><input id="f_min" type="number" min="0" value="0"></div>
+    <div class="row"><label>预警线（该物品单独设置）</label><input id="f_min" type="number" min="0" value="0"></div>
+    <div class="row"><label>条形码<span class="optional-tag">选填</span></label><input id="f_barcode" placeholder="扫码枪扫描或手动输入"></div>
     <label class="check-row"><input type="checkbox" id="f_need_damage">
-      <span>需要报损 <span class="hint">仅作标记，出库/报损无需拍照</span></span>
+      <span>需要报损 <span class="hint">仅作标记，出库需用「报损」方式</span></span>
     </label>
     <div class="btn-row">
       <button class="btn ghost" onclick="this.closest('.modal-bg').remove()">取消</button>
@@ -742,13 +832,18 @@ async function addItem() {
     action: 'add',
     name: document.getElementById('f_name').value.trim(),
     spec: document.getElementById('f_spec').value.trim(),
-    category: document.getElementById('f_cat').value.trim(),
+    category: document.getElementById('f_cat').value,
     unit: document.getElementById('f_unit').value.trim() || '件',
     initQty: Number(document.getElementById('f_init').value) || 0,
     minQty: Number(document.getElementById('f_min').value) || 0,
     needDamage: document.getElementById('f_need_damage').checked,
+    barcode: document.getElementById('f_barcode').value.trim(),
   };
   if (!data.name) return toast('请填写物品名称', 'warning');
+  // 重复建档校验：同分类下同名
+  if (STATE.items.find(x => x.name === data.name && catOf(x) === (data.category || '其他'))) {
+    if (!confirm('该分类下此物品已存在，请勿重复建档，请直接对现有物品增减数量。\n\n仍要坚持新建吗？')) return;
+  }
   try {
     await api('/items', 'POST', data);
     document.querySelector('.modal-bg').remove();
@@ -761,14 +856,15 @@ function showEditItem(id) {
   const it = STATE.items.find(x => x.id === id);
   if (!it) return;
   modal(`
-    <h3>✏️ 编辑物品</h3>
+    <h3>✏️ 编辑物品档案</h3>
+    <div class="row"><label>所属分类区域</label><select id="f_cat">${catOptions(CATS.includes(it.category) ? it.category : '')}</select></div>
     <div class="row"><label>名称</label><input id="f_name" value="${escapeHtml(it.name)}"></div>
-    <div class="row"><label>规格</label><input id="f_spec" value="${escapeHtml(it.spec || '')}"></div>
-    <div class="row"><label>分类</label><input id="f_cat" value="${escapeHtml(it.category || '')}"></div>
+    <div class="row"><label>规格<span class="optional-tag">选填</span></label><input id="f_spec" value="${escapeHtml(it.spec || '')}"></div>
     <div class="row"><label>单位</label><input id="f_unit" value="${escapeHtml(it.unit)}"></div>
-    <div class="row"><label>预警线</label><input id="f_min" type="number" min="0" value="${it.minQty}"></div>
+    <div class="row"><label>预警线（该物品单独设置）</label><input id="f_min" type="number" min="0" value="${it.minQty}"></div>
+    <div class="row"><label>条形码<span class="optional-tag">选填</span></label><input id="f_barcode" value="${escapeHtml(it.barcode || '')}" placeholder="扫码枪扫描或手动输入"></div>
     <label class="check-row"><input type="checkbox" id="f_need_damage" ${it.needDamage ? 'checked' : ''}>
-      <span>需要报损 <span class="hint">仅作标记，出库/报损无需拍照</span></span>
+      <span>需要报损 <span class="hint">仅作标记，出库需用「报损」方式</span></span>
     </label>
     <div class="text-light">当前库存：${it.qty} ${escapeHtml(it.unit)}（要改库存请走"入库"流程）</div>
     <div class="btn-row">
@@ -782,10 +878,11 @@ async function editItem(id) {
     action: 'update', id,
     name: document.getElementById('f_name').value.trim(),
     spec: document.getElementById('f_spec').value.trim(),
-    category: document.getElementById('f_cat').value.trim(),
+    category: document.getElementById('f_cat').value,
     unit: document.getElementById('f_unit').value.trim(),
     minQty: Number(document.getElementById('f_min').value) || 0,
     needDamage: document.getElementById('f_need_damage').checked,
+    barcode: document.getElementById('f_barcode').value.trim(),
   };
   try {
     await api('/items', 'POST', data);
@@ -806,25 +903,30 @@ async function delItem(id) {
 }
 
 /* ============================================================
- * 📥 入库（支持批量录入）
+ * 📥 入库（手动录入 / 扫码条码 / 归还入库）
  * ============================================================ */
-// 行模板：根据物品列表生成下拉选项 HTML
-function inboundItemOpts() {
-  return STATE.items.map(it =>
-    `<option value="${it.id}">${escapeHtml(it.name)} (${escapeHtml(it.spec || '')}) · 现 ${it.qty} ${escapeHtml(it.unit)}</option>`
-  ).join('') + `<option value="__new__">➕ 新物品（基本信息里没有，入库后自动建档）</option>`;
+const INB = { mode: 'manual', kind: 'in' }; // mode: manual|scan  kind: in|return(活动退回)
+// 分类下的物品选项（归还入库同样可选）
+function inboundItemOpts(cat) {
+  const list = STATE.items.filter(it => catOf(it) === cat)
+    .sort((a, b) => outFreq(b.id) - outFreq(a.id));
+  return list.map(it =>
+    `<option value="${it.id}">${escapeHtml(it.name)}${it.spec ? ' (' + escapeHtml(it.spec) + ')' : ''} · 现 ${it.qty} ${escapeHtml(it.unit)}</option>`
+  ).join('') + `<option value="__new__">➕ 新物品（该分类下没有，入库后自动建档）</option>`;
 }
 function inboundRowHtml(idx, isFirst) {
+  const cat = document.getElementById('in_cat') ? document.getElementById('in_cat').value : '';
+  const isReturn = INB.kind === 'return';
   return `
     <div class="batch-row" data-idx="${idx}">
       <span class="idx">#${idx + 1}</span>
       <div class="field-row">
         <label>物品</label>
-        <select class="in_item" onchange="toggleInboundNew(this)">${inboundItemOpts()}</select>
+        <select class="in_item" onchange="toggleInboundNew(this)"><option value="">-- 选择物品 --</option>${inboundItemOpts(cat)}</select>
       </div>
       <div class="field-row in_new_fields" style="display:none">
         <label>新物品名</label>
-        <input class="in_new_name" placeholder="基本信息里没有的物品名">
+        <input class="in_new_name" placeholder="该分类下还没有的物品名">
       </div>
       <div class="field-row in_new_fields" style="display:none">
         <label>规格<span class="optional-tag">选填</span></label>
@@ -836,7 +938,7 @@ function inboundRowHtml(idx, isFirst) {
       </div>
       <div class="field-row in_new_fields" style="display:none">
         <label class="check-row"><input type="checkbox" class="in_new_damage">
-          <span>📸 需要报损 <span class="hint">出库时需拍旧物品照片</span></span>
+          <span>需要报损 <span class="hint">出库时需用「报损」方式</span></span>
         </label>
       </div>
       <div class="field-row">
@@ -845,7 +947,7 @@ function inboundRowHtml(idx, isFirst) {
       </div>
       <div class="field-row">
         <label>备注<span class="optional-tag">选填</span></label>
-        <input class="in_remark" placeholder="如：淘宝购入">
+        <input class="in_remark" placeholder="${isReturn ? '活动退回：活动名称、退回原因等' : '采购来源：如淘宝购入、京东购入'}">
       </div>
       ${isFirst ? '' : `<button type="button" class="del" onclick="removeInboundRow(this)">✕ 删除此行</button>`}
     </div>
@@ -860,10 +962,31 @@ function toggleInboundNew(sel) {
   if (isNew) { const nm = row.querySelector('.in_new_name'); if (nm) nm.focus(); }
 }
 function renderInbound() {
+  INB.mode = 'manual'; INB.kind = 'in';
   return `
     <div class="card">
       <h2>📥 入库</h2>
-      <div class="text-light mb">管理员入库立即生效并记录流水；授权人员提交后等管理员审批。可一次录入多种物品；物品下拉里选「➕ 新物品」可直接入基本信息里还没有的东西，入库完自动建档。</div>
+      <div class="mode-tabs">
+        <div class="mode-tab on" id="mt_manual" onclick="setInbMode('manual')">⌨️ 手动录入</div>
+        <div class="mode-tab" id="mt_scan" onclick="setInbMode('scan')">📷 扫码条形码入库</div>
+      </div>
+      <div class="mode-tabs">
+        <div class="mode-tab on" id="kt_in" onclick="setInbKind('in')">📥 正常入库</div>
+        <div class="mode-tab" id="kt_return" onclick="setInbKind('return')">↩️ 归还入库（活动退回）</div>
+      </div>
+      <div class="row">
+        <label>分类区域</label>
+        <select id="in_cat" onchange="onInCatChange()" style="flex:1">
+          <option value="">-- 请先选择分类区域 --</option>
+          ${CATS.map(c => `<option value="${c}">${c}</option>`).join('')}
+        </select>
+      </div>
+      <div id="scanBox" style="display:none">
+        <video id="scanVideo" autoplay playsinline muted></video>
+        <div class="btn-row mt"><button class="btn" id="scanBtn" onclick="toggleScan()">📷 开始扫码</button></div>
+        <div class="scan-tip">对准物品条形码自动识别并填入；识别不了？切回「手动录入」模式即可，不阻断入库流程。</div>
+      </div>
+      <div class="text-light mb">管理员入库立即生效并记录流水；授权人员提交后等管理员审批。先选分类区域，再录入物品。</div>
       <div id="inboundList" class="batch-list">${inboundRowHtml(0, true)}</div>
       <button type="button" class="batch-add" onclick="addInboundRow()">＋ 添加一种物品</button>
       <div class="btn-row">
@@ -872,6 +995,26 @@ function renderInbound() {
       </div>
     </div>
   `;
+}
+function setInbMode(m) {
+  INB.mode = m;
+  document.getElementById('mt_manual').classList.toggle('on', m === 'manual');
+  document.getElementById('mt_scan').classList.toggle('on', m === 'scan');
+  document.getElementById('scanBox').style.display = m === 'scan' ? 'block' : 'none';
+  if (m !== 'scan') stopScan();
+}
+function setInbKind(k) {
+  INB.kind = k;
+  document.getElementById('kt_in').classList.toggle('on', k === 'in');
+  document.getElementById('kt_return').classList.toggle('on', k === 'return');
+  // 重建行以更新备注提示
+  onInCatChange();
+}
+function onInCatChange() {
+  const cat = document.getElementById('in_cat').value;
+  document.getElementById('inboundList').innerHTML = inboundRowHtml(0, true);
+  updateInboundCount();
+  if (!cat) toast('已选择：请先选择分类区域再录入物品', '');
 }
 function addInboundRow() {
   const list = document.getElementById('inboundList');
@@ -905,6 +1048,8 @@ function updateInboundCount() {
   if (el) el.textContent = c;
 }
 async function doInbound() {
+  const cat = document.getElementById('in_cat').value;
+  if (!cat) { document.getElementById('in_cat').focus(); return toast('请先选择分类区域', 'warning'); }
   const rows = Array.from(document.querySelectorAll('#inboundList .batch-row'));
   const items = [];
   for (const row of rows) {
@@ -914,6 +1059,10 @@ async function doInbound() {
     if (!qty || qty <= 0) {
       row.querySelector('.in_qty').focus();
       return toast('请填写每一行的数量', 'warning');
+    }
+    if (!selVal) {
+      row.querySelector('.in_item').focus();
+      return toast('请选择物品（或选「➕ 新物品」）', 'warning');
     }
     if (selVal === '__new__') {
       const newName = row.querySelector('.in_new_name').value.trim();
@@ -926,6 +1075,7 @@ async function doInbound() {
         spec: row.querySelector('.in_new_spec').value.trim(),
         unit: row.querySelector('.in_new_unit').value.trim() || '件',
         needDamage: row.querySelector('.in_new_damage').checked,
+        category: cat,
         qty, remark,
       });
     } else {
@@ -933,36 +1083,106 @@ async function doInbound() {
     }
   }
   if (items.length === 0) return toast('请至少添加一种入库物品', 'warning');
+  // 归还入库：二次确认
+  if (INB.kind === 'return' && !confirm('确认本次操作？')) return;
   try {
-    let r = await api('/inbound', 'POST', { items });
+    const payload = { items };
+    if (INB.kind === 'return') payload.mode = 'return';
+    let r = await api('/inbound', 'POST', payload);
     if (r.needConfirm) {
       if (!confirm(r.msg + '\n\n仍要继续提交吗？')) return;
-      r = await api('/inbound', 'POST', { items, confirm: true });
+      payload.confirm = true;
+      r = await api('/inbound', 'POST', payload);
     }
+    const kindTxt = INB.kind === 'return' ? '活动退回入库' : '入库';
     if (r.pending) {
-      toast(`入库申请已提交（${r.count} 种），等管理员审批`, 'success');
+      toast(`${kindTxt}申请已提交（${r.count} 种），等管理员审批`, 'success');
     } else if (items.length === 1) {
       const x = r.results[0];
-      toast(`入库成功！${x.name} 从 ${x.before} → ${x.after} ${x.unit}${x.created ? '（已自动建档）' : ''}`, 'success');
+      toast(`${kindTxt}成功！${x.name} 从 ${x.before} → ${x.after} ${x.unit}${x.created ? '（已自动建档）' : ''}`, 'success');
     } else {
       const created = r.results.filter(x => x.created).length;
-      toast(`批量入库成功！共 ${r.count} 种物品${created ? `，其中 ${created} 种已自动建档` : ''}`, 'success');
+      toast(`批量${kindTxt}成功！共 ${r.count} 种物品${created ? `，其中 ${created} 种已自动建档` : ''}`, 'success');
     }
     resetInboundRows();
     await refreshState();
     renderTab(STATE.tab);
   } catch (e) { toast(e.message, 'error'); }
 }
+// 扫码入库（BarcodeDetector，不支持时提示切手动，不阻断流程）
+let scanStream = null, scanTimer = null, scanDetector = null;
+async function toggleScan() {
+  if (scanStream) { stopScan(); return; }
+  if (!('BarcodeDetector' in window)) {
+    toast('当前浏览器不支持摄像头扫码，请切换「手动录入」模式', 'warning');
+    return;
+  }
+  try {
+    scanDetector = new BarcodeDetector();
+    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    const v = document.getElementById('scanVideo');
+    v.style.display = 'block';
+    v.srcObject = scanStream;
+    await v.play();
+    document.getElementById('scanBtn').textContent = '⏹ 停止扫码';
+    scanTimer = setInterval(async () => {
+      try {
+        if (!v.videoWidth) return;
+        const codes = await scanDetector.detect(v);
+        if (codes && codes.length) handleScanCode(codes[0].rawValue);
+      } catch (e) { /* 单帧失败忽略 */ }
+    }, 500);
+  } catch (e) {
+    toast('无法打开摄像头，请改用手动录入', 'error');
+    stopScan();
+  }
+}
+function stopScan() {
+  if (scanTimer) { clearInterval(scanTimer); scanTimer = null; }
+  if (scanStream) { scanStream.getTracks().forEach(t => t.stop()); scanStream = null; }
+  const v = document.getElementById('scanVideo');
+  if (v) { v.style.display = 'none'; v.srcObject = null; }
+  const btn = document.getElementById('scanBtn');
+  if (btn) btn.textContent = '📷 开始扫码';
+}
+function handleScanCode(raw) {
+  const code = String(raw || '').trim();
+  if (!code) return;
+  const it = STATE.items.find(x => (x.barcode || '') === code);
+  if (!it) {
+    toast(`条码 ${code} 未绑定物品，可在物品档案中绑定条码，或切回手动录入`, 'warning');
+    return;
+  }
+  // 分类联动
+  const catSel = document.getElementById('in_cat');
+  if (catOf(it) !== catSel.value) {
+    catSel.value = catOf(it);
+    onInCatChange();
+  }
+  // 填入第一个空行，否则新增一行
+  let row = Array.from(document.querySelectorAll('#inboundList .batch-row'))
+    .find(r => !r.querySelector('.in_item').value);
+  if (!row) { addInboundRow(); row = document.querySelector('#inboundList .batch-row:last-child'); }
+  row.querySelector('.in_item').value = it.id;
+  row.querySelector('.in_qty').focus();
+  if (navigator.vibrate) navigator.vibrate(80);
+  toast(`✓ 已识别：${it.name}（${catOf(it)}），请填写数量`, 'success');
+}
 function quickInbound(id) {
   switchTab('inbound');
   setTimeout(() => {
+    const it = STATE.items.find(x => x.id === id);
+    if (!it) return;
+    const catSel = document.getElementById('in_cat');
+    catSel.value = catOf(it);
+    onInCatChange();
     const sel = document.querySelector('#inboundList .batch-row .in_item');
     if (sel) {
       sel.value = id;
       toggleInboundNew(sel);
       document.querySelector('#inboundList .in_qty')?.focus();
     }
-  }, 100);
+  }, 150);
 }
 
 /* ============================================================
@@ -970,18 +1190,22 @@ function quickInbound(id) {
  * ============================================================ */
 function renderApply() {
   const myReq = STATE.requests.filter(r => r.applicant === STATE.me.name);
-  const itemOpts = STATE.items.map(it =>
-    `<option value="${it.id}">${escapeHtml(it.name)}${it.needDamage ? '（需报损）' : ''} · 现 ${it.qty} ${escapeHtml(it.unit)}</option>`
-  ).join('');
   return `
     <div class="card">
-      <h2>📤 提交申请 <span class="text-light" style="font-size:13px;font-weight:400">（支持一次申请多种）</span></h2>
+      <h2>📤 出库 / 采买申请 <span class="text-light" style="font-size:13px;font-weight:400">（支持一次申请多种）</span></h2>
       <div class="flex mb">
         <label style="font-size:13px;color:var(--text-light)">类型：</label>
-        <select id="ap_type" onchange="switchApplyType()" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px">
+        <select id="ap_type" onchange="onApplyTypeChange()" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px">
           <option value="out">📤 出库</option>
           <option value="damage">💔 报损</option>
           <option value="buy">🛒 采买</option>
+        </select>
+      </div>
+      <div class="row" id="ap_cat_row">
+        <label>分类区域</label>
+        <select id="ap_cat" onchange="onApplyCatChange()" style="flex:1">
+          <option value="">-- 请先选择分类区域 --</option>
+          ${CATS.map(c => `<option value="${c}">${c}</option>`).join('')}
         </select>
       </div>
       <div id="applyList" class="batch-list">${applyRowHtml(0, 'out', true)}</div>
@@ -990,7 +1214,7 @@ function renderApply() {
         <button class="btn" onclick="submitApply()">✓ 提交申请（共 <span id="applyCount">1</span> 种）</button>
         <button type="button" class="btn ghost small" onclick="resetApplyRows()">清空</button>
       </div>
-      <div class="text-light mt">授权人员提交后等管理员审批，批准后立即扣库存；管理员出库/报损免审批直接生效。需报损的物品只能用「💔 报损」方式出库；采买可填基本信息里还没有的新物品，批准后由管理员入库并自动建档。</div>
+      <div class="text-light mt">先选分类区域再选物品（常用物品排前面）。授权人员提交后等管理员审批，批准后立即扣库存；管理员免审批直接生效。需报损的物品只能用「💔 报损」方式出库；采买可填基本信息里还没有的新物品，库存充足的物品采买会被系统自动驳回。</div>
     </div>
 
     <div class="card">
@@ -1015,13 +1239,18 @@ function renderApply() {
   `;
 }
 
-// 批量申请行 HTML
+// 批量申请行 HTML（物品下拉：分类过滤 + 高频物品靠前）
 function applyRowHtml(idx, type, isFirst) {
-  const itemOpts = STATE.items.map(it =>
-    `<option value="${it.id}">${escapeHtml(it.name)}${it.needDamage ? '（需报损）' : ''} · 现 ${it.qty} ${escapeHtml(it.unit)}</option>`
-  ).join('');
-  // type: 'out' | 'damage' | 'buy'
+  const cat = document.getElementById('ap_cat') ? document.getElementById('ap_cat').value : '';
   const isBuy = type === 'buy';
+  let itemOpts = '';
+  if (!isBuy) {
+    itemOpts = STATE.items.filter(it => catOf(it) === cat)
+      .sort((a, b) => outFreq(b.id) - outFreq(a.id))
+      .map(it =>
+        `<option value="${it.id}">${escapeHtml(it.name)}${it.needDamage ? '（需报损）' : ''} · 现 ${it.qty} ${escapeHtml(it.unit)}</option>`
+      ).join('');
+  }
   return `
     <div class="batch-row" data-idx="${idx}">
       <span class="idx">#${idx + 1}</span>
@@ -1053,20 +1282,22 @@ function applyRowHtml(idx, type, isFirst) {
     </div>
   `;
 }
-function switchApplyType() {
+function onApplyTypeChange() {
   const t = document.getElementById('ap_type').value;
-  const setDisp = (row, sel, val) => {
-    const el = row.querySelector(sel);
-    if (el) { const fr = el.closest('.field-row'); if (fr) fr.style.display = val; }
-  };
-  document.querySelectorAll('#applyList .batch-row').forEach((r) => {
-    const isBuy = (t === 'buy');
-    r.querySelectorAll('.field-row').forEach(fr => fr.style.display = '');
-    setDisp(r, '.ap_item', isBuy ? 'none' : '');
-    setDisp(r, '.ap_buy_name', isBuy ? '' : 'none');
-    setDisp(r, '.ap_buy_spec', isBuy ? '' : 'none');
-    setDisp(r, '.ap_buy_unit', isBuy ? '' : 'none');
-  });
+  // 采买不需要分类选择
+  document.getElementById('ap_cat_row').style.display = t === 'buy' ? 'none' : 'flex';
+  onApplyCatChange();
+}
+function onApplyCatChange() {
+  const t = document.getElementById('ap_type').value;
+  const cat = document.getElementById('ap_cat').value;
+  // 重建行（保留行数）
+  const n = document.querySelectorAll('#applyList .batch-row').length || 1;
+  let html = '';
+  for (let i = 0; i < n; i++) html += applyRowHtml(i, t, i === 0);
+  document.getElementById('applyList').innerHTML = html;
+  updateApplyCount();
+  if (!cat && t !== 'buy') toast('请先选择分类区域再选物品', '');
 }
 function addApplyRow() {
   const list = document.getElementById('applyList');
@@ -1108,6 +1339,10 @@ async function submitApply() {
   const type = document.getElementById('ap_type').value;
   const rows = Array.from(document.querySelectorAll('#applyList .batch-row'));
   if (rows.length === 0) return toast('请至少添加一种申请', 'warning');
+  if (type !== 'buy' && !document.getElementById('ap_cat').value) {
+    document.getElementById('ap_cat').focus();
+    return toast('请先选择分类区域', 'warning');
+  }
 
   // 收集所有行
   const requests = [];
@@ -1148,11 +1383,19 @@ async function submitApply() {
     }
   }
 
+  if (requests.length === 0 && buyItems.length === 0) return toast('请至少添加一种申请', 'warning');
+  // 出库 / 报损 / 采买：二次确认
+  if (!confirm('确认本次操作？')) return;
   try {
     let totalCount = 0;
     if (type === 'buy') {
       const r = await api('/buy', 'POST', { items: buyItems });
       totalCount = r.count;
+      if (r.autoRejected > 0) {
+        toast(`已提交 ${totalCount} 种申请；${r.autoRejected} 种因库存充足被系统自动驳回（当前库存充足，请直接出库）`, 'success');
+      } else {
+        toast(`已提交 ${totalCount} 种采买申请，等管理员审批`, 'success');
+      }
     } else {
       let r = await api('/req', 'POST', { requests });
       if (r.needConfirm) {
@@ -1167,8 +1410,8 @@ async function submitApply() {
         renderTab(STATE.tab);
         return;
       }
+      toast(`已提交 ${totalCount} 种申请，等管理员审批`, 'success');
     }
-    toast(`已提交 ${totalCount} 种申请，等管理员审批`, 'success');
     resetApplyRows();
     await refreshState();
     renderTab(STATE.tab);
@@ -1215,22 +1458,7 @@ function renderApprove() {
       `).join('') : '<div class="empty">暂无待审批申请</div>'}
     </div>
 
-    ${approved.length ? `
-    <div class="card">
-      <h2>🛒 待采买入库（${approved.length}）</h2>
-      ${approved.map(r => `
-        <div style="padding: 12px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px;">
-          <div class="flex between mb">
-            <div><span class="tag buy">采买</span> <b>${escapeHtml(r.itemName)}</b> × ${r.qty} ${escapeHtml(r.unit)}</div>
-            <div class="text-light">${fmtTime(r.approveTime)}</div>
-          </div>
-          <div class="text-light mb">申请人：${escapeHtml(r.applicant)} · 原因：${escapeHtml(r.reason || '无')}</div>
-          <div class="btn-row">
-            <button class="btn success" onclick="buyDone('${r.id}')">✓ 到货入库</button>
-          </div>
-        </div>
-      `).join('')}
-    </div>` : ''}
+    <div class="text-light" style="font-size:12px;margin:4px 2px 10px;">💡 采买申请批准后即完成，货物到货时请在「入库」中登记（采购来源可写入备注）。</div>
 
     ${recent.length ? `
     <div class="card">
@@ -1327,9 +1555,311 @@ async function submitBuyDone(id) {
 }
 
 /* ============================================================
+ * ⚠️ 库存预警专区（需求8/16：首页不展示预警；仅管理员+授权人员可见）
+ * ============================================================ */
+function alertItems() {
+  return {
+    out: STATE.items.filter(i => Number(i.qty) === 0),
+    low: STATE.items.filter(i => Number(i.qty) > 0 && Number(i.minQty) > 0 && Number(i.qty) <= Number(i.minQty)),
+  };
+}
+function renderAlerts() {
+  if (STATE.me.role !== 'admin' && STATE.me.role !== 'authorized') {
+    return `<div class="card"><h2>⚠️ 库存预警</h2><div class="empty">库存预警专区仅管理员与授权入库人员可见</div></div>`;
+  }
+  const { out, low } = alertItems();
+  const card = (it, isOut) => `
+    <div class="ig-card ${isOut ? 'out' : 'warn'}" style="cursor:default">
+      <div class="nm">${escapeHtml(it.name)}</div>
+      ${it.spec ? `<div class="sp">${escapeHtml(it.spec)}</div>` : ''}
+      <div class="qt">${it.qty}<small> ${escapeHtml(it.unit)}</small></div>
+      <div class="sp">预警线 ${it.minQty} · ${escapeHtml(catOf(it))}</div>
+      <div class="btn-row mt" style="justify-content:center">
+        <button class="btn small" onclick="quickInbound('${it.id}')">📥 去入库</button>
+      </div>
+    </div>`;
+  return `
+    <div class="card">
+      <h2>⚠️ 库存预警</h2>
+      <div class="text-light mb">低于预警线或已缺货的物品会集中展示在这里，点击「去入库」可直接补货。</div>
+      ${(out.length + low.length) ? `
+        ${out.length ? `<h3 style="margin:10px 0 6px;font-size:15px">🔴 缺货（${out.length}）</h3><div class="item-grid">${out.map(i => card(i, true)).join('')}</div>` : ''}
+        ${low.length ? `<h3 style="margin:14px 0 6px;font-size:15px">🟠 库存偏低（${low.length}）</h3><div class="item-grid">${low.map(i => card(i, false)).join('')}</div>` : ''}
+      ` : '<div class="empty">✅ 库存状态良好，暂无预警物品</div>'}
+    </div>
+    <div class="text-light" style="font-size:12px">预警线由管理员为每个物品单独设置；预警专区仅管理员与授权入库人员可见。</div>
+  `;
+}
+
+/* ============================================================
+ * 👥 人员管理（需求5/18：仅管理员；全员出入库/采买记录+起止时间筛选）
+ * ============================================================ */
+function renderStaff() {
+  if (STATE.me.role !== 'admin') {
+    return `<div class="card"><h2>👥 人员管理</h2><div class="empty">人员管理仅管理员可查看</div></div>`;
+  }
+  const opts = STATE.users.map(u => `<option value="${escapeHtml(u.name)}">${escapeHtml(u.name)}（${roleText(u.role)}）</option>`).join('');
+  return `
+    <div class="card">
+      <h2>👥 人员管理</h2>
+      <div class="row">
+        <label>人员</label>
+        <select id="sf_person" onchange="renderStaffOps()"><option value="">全部人员</option>${opts}</select>
+        <label>类型</label>
+        <select id="sf_type" onchange="renderStaffOps()">
+          <option value="">全部</option>
+          <option value="in">入库</option>
+          <option value="out">出库</option>
+          <option value="damage">报损</option>
+          <option value="buy">采买</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>起</label><input type="date" id="sf_from" onchange="renderStaffOps()" style="max-width:150px">
+        <label>止</label><input type="date" id="sf_to" onchange="renderStaffOps()" style="max-width:150px">
+      </div>
+      <div id="staffSummary"></div>
+      <div id="staffOps"></div>
+    </div>
+    <div class="text-light" style="font-size:12px">记录涵盖入库 / 出库 / 报损 / 采买，包含操作人、时间、物品名与数量；完整流水请到「台账」页查看。</div>
+  `;
+}
+function staffFiltered() {
+  const p = document.getElementById('sf_person').value;
+  const t = document.getElementById('sf_type').value;
+  const from = document.getElementById('sf_from').value;
+  const to = document.getElementById('sf_to').value;
+  return STATE.logs.filter(l => {
+    if (!['in', 'out', 'damage', 'buy'].includes(l.type)) return false;
+    if (p && l.person !== p) return false;
+    if (t && l.type !== t) return false;
+    const d = String(l.time || '').slice(0, 10);
+    if (from && d < from) return false;
+    if (to && d > to) return false;
+    return true;
+  });
+}
+function renderStaffOps() {
+  const sumEl = document.getElementById('staffSummary');
+  const opsEl = document.getElementById('staffOps');
+  if (!sumEl || !opsEl) return;
+  const list = staffFiltered();
+  // 按人员汇总
+  const byPerson = {};
+  for (const l of list) {
+    byPerson[l.person] = byPerson[l.person] || { in: 0, out: 0, damage: 0, buy: 0, total: 0 };
+    byPerson[l.person][l.type]++;
+    byPerson[l.person].total++;
+  }
+  const names = Object.keys(byPerson).sort();
+  sumEl.innerHTML = names.length ? `<div class="item-grid" style="margin:10px 0">${names.map(n => `
+    <div class="ig-card" style="cursor:default">
+      <div class="nm">👤 ${escapeHtml(n)}</div>
+      <div class="sp">入库 ${byPerson[n].in} · 出库 ${byPerson[n].out}</div>
+      <div class="sp">报损 ${byPerson[n].damage} · 采买 ${byPerson[n].buy}</div>
+      <div class="qt"><small>共 </small>${byPerson[n].total}<small> 笔</small></div>
+    </div>`).join('')}</div>` : '';
+  opsEl.innerHTML = list.length ? `<div class="table-wrap"><table>
+    <thead><tr><th>时间</th><th>类型</th><th>物品</th><th>数量</th><th>操作人</th><th>备注</th></tr></thead>
+    <tbody>${list.map(l => {
+      const tg = logTag(l);
+      return `<tr>
+        <td>${fmtTime(l.time)}</td>
+        <td><span class="tag ${tg[0]}">${tg[1]}</span></td>
+        <td>${escapeHtml(l.itemName)}</td>
+        <td>${l.type === 'buy' ? l.qty : (l.type === 'in' ? '+' : '-') + l.qty} ${escapeHtml(l.unit)}</td>
+        <td>${escapeHtml(l.person)}</td>
+        <td class="text-light">${escapeHtml((l.remark || '').slice(0, 16))}${(l.remark || '').length > 16 ? '…' : ''}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table></div>` : '<div class="empty">该筛选条件下暂无记录</div>';
+}
+
+/* ============================================================
+ * 📊 库存盘点（需求14：仅管理员；账面 vs 实物，自动盘盈盘亏，永久保存）
+ * ============================================================ */
+let TK = { rows: null }; // 进行中的盘点：[{itemId, bookQty, actual}]
+function renderStocktake() {
+  if (STATE.me.role !== 'admin') {
+    return `<div class="card"><h2>📊 库存盘点</h2><div class="empty">库存盘点仅管理员可操作</div></div>`;
+  }
+  const hist = STATE.stocktakes || [];
+  return `
+    <div class="card">
+      <h2>📊 库存盘点</h2>
+      <div class="text-light mb">逐项填写实物数量，与账面库存自动比对计算盘盈盘亏；盘点记录永久保存，任何人不可删除。</div>
+      ${TK.rows ? `
+        <div class="flex between" style="margin-bottom:6px">
+          <b>📝 盘点进行中（${TK.rows.length} 种物品）</b>
+          <button class="btn small ghost" onclick="cancelStocktake()">取消盘点</button>
+        </div>
+        <label class="check-row" style="margin:6px 0 10px"><input type="checkbox" id="tk_adjust" checked>
+          <span>提交后按盘点结果自动调账<span class="hint">差异记入库存流水，可追溯</span></span>
+        </label>
+        <div style="max-height:430px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px 10px">
+          ${stockFormGroups()}
+        </div>
+        <div class="btn-row mt">
+          <button class="btn" onclick="submitStocktake()">✅ 提交盘点结果</button>
+        </div>
+      ` : `<button class="btn" onclick="startStocktake()">📋 开始新盘点</button>`}
+    </div>
+    <div class="card">
+      <h2>🗂 历史盘点记录（${hist.length}）</h2>
+      ${hist.length ? hist.map(stockRecHtml).join('') : '<div class="empty">暂无盘点记录</div>'}
+    </div>
+  `;
+}
+function stockFormGroups() {
+  const idx = {};
+  for (const c of [...CATS, '其他']) idx[c] = [];
+  TK.rows.forEach((r, i) => {
+    const it = STATE.items.find(x => x.id === r.itemId) || {};
+    idx[catOf(it)].push({ r, i, it });
+  });
+  return Object.keys(idx).filter(c => idx[c].length).map(c => `
+    <div style="margin:8px 0 2px;font-weight:600;font-size:12px;color:var(--text-light)">📁 ${c}（${idx[c].length}）</div>
+    <div class="stk-row stk-head"><span>物品</span><span style="text-align:center">账面</span><span style="text-align:center">实盘</span><span style="text-align:center">差异</span></div>
+    ${idx[c].map(({ r, i, it }) => `
+      <div class="stk-row">
+        <span>${escapeHtml(it.name || '')}${it.spec ? `<small class="text-light"> ${escapeHtml(it.spec)}</small>` : ''}</span>
+        <span style="text-align:center">${r.bookQty}</span>
+        <input type="number" min="0" step="0.01" placeholder="同账面" data-i="${i}" oninput="tkLive(this)">
+        <span id="tk_diff_${i}" style="text-align:center;color:var(--text-light)">-</span>
+      </div>`).join('')}
+  `).join('');
+}
+function startStocktake() {
+  if (!STATE.items.length) { toast('暂无物品可盘点', 'warning'); return; }
+  TK.rows = STATE.items.map(it => ({ itemId: it.id, bookQty: Number(it.qty) || 0, actual: null }));
+  renderTab('stocktake');
+}
+function cancelStocktake() { TK.rows = null; renderTab('stocktake'); }
+function tkLive(inp) {
+  const i = Number(inp.dataset.i);
+  const r = TK.rows[i];
+  r.actual = inp.value === '' ? null : Number(inp.value);
+  const el = document.getElementById('tk_diff_' + i);
+  if (!el) return;
+  if (r.actual == null || isNaN(r.actual)) {
+    el.textContent = '-';
+    el.style.color = 'var(--text-light)';
+    return;
+  }
+  const diff = Math.round((r.actual - r.bookQty) * 100) / 100;
+  el.textContent = diff > 0 ? '+' + diff : String(diff);
+  el.style.color = diff > 0 ? '#16a34a' : diff < 0 ? '#dc2626' : 'var(--text-light)';
+}
+async function submitStocktake() {
+  const rows = TK.rows
+    .filter(r => r.actual != null && !isNaN(r.actual))
+    .map(r => ({ itemId: r.itemId, actual: r.actual }));
+  const adjust = document.getElementById('tk_adjust').checked;
+  const msg = rows.length
+    ? `已填写 ${rows.length} 项实盘数量${adjust ? '，差异将自动调账并记入流水' : '，仅保存记录不调账'}。确认本次操作？`
+    : '未填写任何实盘数量，将按「账实全部一致」保存记录。确认本次操作？';
+  if (!confirm(msg)) return;
+  try {
+    const r = await api('/stocktake', 'POST', { rows, adjust });
+    TK.rows = null;
+    toast(`✅ 盘点完成：${r.count} 项，盘盈 ${r.gain} 项，盘亏 ${r.loss} 项`, 'success');
+    await refreshState();
+    renderTab('stocktake');
+  } catch (e) { toast(e.message, 'error'); }
+}
+function stockRecHtml(rec) {
+  const all = rec.rows || [];
+  const diffs = all.filter(x => Number(x.diff) !== 0);
+  const same = all.length - diffs.length;
+  return `
+    <div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px">
+      <div class="flex between" style="align-items:center">
+        <b>${fmtTime(rec.time)}</b>
+        <span class="text-light" style="font-size:12px">盘点人：${escapeHtml(rec.admin || '')}</span>
+      </div>
+      <div class="text-light" style="font-size:12px;margin:4px 0 6px">共 ${all.length} 项 · 盘盈 ${diffs.filter(x => Number(x.diff) > 0).length} · 盘亏 ${diffs.filter(x => Number(x.diff) < 0).length} · 一致 ${same}</div>
+      ${diffs.length ? `
+        <div class="stk-row stk-head"><span>物品</span><span style="text-align:center">账面</span><span style="text-align:center">实盘</span><span style="text-align:center">差异</span></div>
+        ${diffs.map(x => `
+          <div class="stk-row">
+            <span>${escapeHtml(x.itemName)}${x.spec ? `<small class="text-light"> ${escapeHtml(x.spec)}</small>` : ''}</span>
+            <span style="text-align:center">${x.bookQty}</span>
+            <span style="text-align:center">${x.actualQty}</span>
+            <span style="text-align:center;color:${Number(x.diff) > 0 ? '#16a34a' : '#dc2626'}">${Number(x.diff) > 0 ? '+' : ''}${x.diff}</span>
+          </div>`).join('')}
+      ` : '<div class="text-light" style="font-size:12px">本次盘点账实全部一致 ✓</div>'}
+    </div>`;
+}
+
+/* ============================================================
+ * 📑 数据导出（需求15：仅管理员；库存总表 / 出入库明细 / 采买报表）
+ * ============================================================ */
+function csvEsc(v) {
+  const s = String(v == null ? '' : v);
+  return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+function downloadCsv(baseName, header, rows) {
+  const lines = [header, ...rows].map(r => r.map(csvEsc).join(','));
+  const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = baseName + '_' + new Date().toISOString().slice(0, 10) + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+function renderExport() {
+  if (STATE.me.role !== 'admin') {
+    return `<div class="card"><h2>📑 数据导出</h2><div class="empty">数据导出仅管理员可操作</div></div>`;
+  }
+  const nLogs = STATE.logs.filter(l => ['in', 'out', 'damage'].includes(l.type)).length;
+  const nBuy = STATE.requests.filter(r => r.type === 'buy').length;
+  return `
+    <div class="card">
+      <h2>📑 数据导出</h2>
+      <div class="text-light mb">导出为 CSV 文件（UTF-8 带 BOM，Excel 直接打开不乱码）。数据导出仅管理员可操作。</div>
+      <div class="btn-row" style="flex-direction:column;align-items:stretch;gap:10px">
+        <button class="btn" onclick="exportStockCsv()">📦 库存总表（${STATE.items.length} 种：分类 / 库存 / 预警线）</button>
+        <button class="btn" onclick="exportLogsCsv()">📋 出入库明细（${nLogs} 条流水，含单据标签）</button>
+        <button class="btn" onclick="exportBuyCsv()">🛒 采买报表（${nBuy} 条采买记录）</button>
+      </div>
+    </div>
+    <div class="text-light" style="font-size:12px">提示：出入库明细含「活动退回 / 采购入库 / 正常出库」单据标签；采买报表含申请、审批、完成全流程字段。</div>
+  `;
+}
+function exportStockCsv() {
+  if (!STATE.items.length) { toast('暂无物品数据', 'warning'); return; }
+  downloadCsv('库存总表',
+    ['分类', '物品名称', '规格', '单位', '当前库存', '预警线', '条形码', '需报损', '建档时间'],
+    STATE.items.map(it => [catOf(it), it.name, it.spec || '', it.unit, it.qty, it.minQty, it.barcode || '', it.needDamage ? '是' : '否', it.createdAt || '']));
+  toast('📦 库存总表已开始下载', 'success');
+}
+function exportLogsCsv() {
+  const rows = STATE.logs.filter(l => ['in', 'out', 'damage'].includes(l.type));
+  if (!rows.length) { toast('暂无出入库流水可导出', 'warning'); return; }
+  downloadCsv('出入库明细',
+    ['时间', '单据标签', '类型', '物品名称', '规格', '单位', '数量', '变动前', '变动后', '操作人', '备注'],
+    rows.map(l => {
+      const tg = logTag(l);
+      const sign = l.type === 'in' ? '+' : '-';
+      return [fmtTime(l.time), tg[1], typeText(l.type), l.itemName, l.spec || '', l.unit, sign + l.qty, l.before == null ? '' : l.before, l.after == null ? '' : l.after, l.person, l.remark || ''];
+    }));
+  toast('📋 出入库明细已开始下载', 'success');
+}
+function exportBuyCsv() {
+  const rows = STATE.requests.filter(r => r.type === 'buy');
+  if (!rows.length) { toast('暂无采买记录可导出', 'warning'); return; }
+  downloadCsv('采买报表',
+    ['申请时间', '物品名称', '规格', '单位', '申请数量', '申请时库存', '用途说明', '申请人', '状态', '审批人', '审批时间', '备注', '完成时间'],
+    rows.map(r => [fmtTime(r.time), r.itemName, r.spec || '', r.unit, r.qty, r.currentQty == null ? '' : r.currentQty, r.reason || '', r.applicant, statusText(r.status), r.approver || '', r.approveTime ? fmtTime(r.approveTime) : '', r.note || '', r.doneTime ? fmtTime(r.doneTime) : '']));
+  toast('🛒 采买报表已开始下载', 'success');
+}
+
+/* ============================================================
  * 📋 台账
  * ============================================================ */
 function renderLogs() {
+  const isAdmin = STATE.me.role === 'admin';
   return `
     <div class="card">
       <h2>📋 出入库台账</h2>
@@ -1340,8 +1870,24 @@ function renderLogs() {
           <option value="in">入库</option>
           <option value="out">出库</option>
           <option value="damage">报损</option>
+          <option value="buy">采买</option>
           <option value="init">建档</option>
+          <option value="file">档案</option>
+          <option value="stocktake">盘点</option>
         </select>
+        <label>单据</label>
+        <select id="lg_sub" onchange="filterLogs()">
+          <option value="">全部单据</option>
+          <option value="return">活动退回</option>
+          <option value="purchase">采购入库</option>
+          <option value="normout">正常出库</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>起</label><input type="date" id="lg_from" onchange="filterLogs()" style="max-width:150px">
+        <label>止</label><input type="date" id="lg_to" onchange="filterLogs()" style="max-width:150px">
+      </div>
+      <div class="row">
         <label>物品</label>
         <input id="lg_item" placeholder="搜索物品..." oninput="filterLogs()" style="max-width:200px">
         <label>操作人</label>
@@ -1351,46 +1897,80 @@ function renderLogs() {
     </div>
   `;
 }
+function logFilters() {
+  return {
+    t: document.getElementById('lg_type').value,
+    sub: document.getElementById('lg_sub').value,
+    from: document.getElementById('lg_from').value,
+    to: document.getElementById('lg_to').value,
+    i: document.getElementById('lg_item').value.trim().toLowerCase(),
+    p: document.getElementById('lg_person').value.trim().toLowerCase(),
+  };
+}
+function matchLogs(f) {
+  return STATE.logs.filter(l => {
+    const tg = logTag(l);
+    if (f.t && l.type !== f.t) return false;
+    if (f.sub) {
+      if (f.sub === 'normout') { if (l.type !== 'out' && l.type !== 'damage') return false; }
+      else if (tg[0] !== f.sub) return false;
+    }
+    const d = String(l.time || '').slice(0, 10);
+    if (f.from && d < f.from) return false;
+    if (f.to && d > f.to) return false;
+    if (f.i && !String(l.itemName).toLowerCase().includes(f.i)) return false;
+    if (f.p && !String(l.person).toLowerCase().includes(f.p)) return false;
+    return true;
+  });
+}
 function filterLogs() {
-  const t = document.getElementById('lg_type').value;
-  const i = document.getElementById('lg_item').value.trim().toLowerCase();
-  const p = document.getElementById('lg_person').value.trim().toLowerCase();
-  const filtered = STATE.logs.filter(l =>
-    (!t || l.type === t) &&
-    (!i || l.itemName.toLowerCase().includes(i)) &&
-    (!p || l.person.toLowerCase().includes(p))
-  );
+  const f = logFilters();
+  const filtered = matchLogs(f);
   const el = document.getElementById('logsList');
   if (!filtered.length) { el.innerHTML = '<div class="empty">无匹配流水</div>'; return; }
   el.innerHTML = `<div class="table-wrap"><table>
-    <thead><tr><th>时间</th><th>类型</th><th>物品</th><th>规格</th><th>数量</th><th>变动</th><th>操作人</th><th>备注</th></tr></thead>
-    <tbody>${filtered.map(l => `
-      <tr>
+    <thead><tr><th>时间</th><th>单据</th><th>物品</th><th>规格</th><th>数量</th><th>变动</th><th>操作人</th><th>备注</th></tr></thead>
+    <tbody>${filtered.map(l => {
+      const tg = logTag(l);
+      return `<tr style="cursor:pointer" onclick="showLogDetail('${l.id}')">
         <td>${fmtTime(l.time)}</td>
-        <td><span class="tag ${l.type}">${typeText(l.type)}</span></td>
+        <td><span class="tag ${tg[0]}">${tg[1]}</span></td>
         <td>${escapeHtml(l.itemName)}</td>
         <td class="text-light">${escapeHtml(l.spec || '')}</td>
         <td>${l.qty} ${escapeHtml(l.unit)}</td>
-        <td>${l.before} → ${l.after}</td>
+        <td>${l.before == null ? '-' : l.before + ' → ' + l.after}</td>
         <td>${escapeHtml(l.person)}</td>
-        <td class="text-light">${escapeHtml(l.remark || '')}</td>
-      </tr>
-    `).join('')}</tbody>
+        <td class="text-light">${escapeHtml((l.remark || '').slice(0, 18))}${(l.remark || '').length > 18 ? '…' : ''}</td>
+      </tr>`;
+    }).join('')}</tbody>
   </table></div>
-  <div class="btn-row mt"><button class="btn ghost" onclick="exportCsv()">📥 导出 CSV</button></div>`;
+  ${STATE.me.role === 'admin' ? `<div class="btn-row mt"><button class="btn ghost" onclick="exportCsv()">📥 导出 CSV</button></div>` : ''}
+  <div class="text-light" style="font-size:12px">点击任意一行可查看完整单据详情；操作日志永久留存，任何人不可删除。</div>`;
+}
+// 单据详情弹窗（需求22）
+function showLogDetail(id) {
+  const l = STATE.logs.find(x => x.id === id);
+  if (!l) return;
+  const tg = logTag(l);
+  modal(`
+    <h3>📄 单据详情</h3>
+    <div class="detail-grid">
+      <span class="k">单据类型</span><span><span class="tag ${tg[0]}">${tg[1]}</span></span>
+      <span class="k">物品名称</span><span><b>${escapeHtml(l.itemName)}</b> ${escapeHtml(l.spec || '')}</span>
+      <span class="k">操作数量</span><span>${l.qty} ${escapeHtml(l.unit || '')}</span>
+      <span class="k">库存变动</span><span>${l.before == null ? '—' : l.before + ' → ' + l.after}</span>
+      <span class="k">操作人</span><span>${escapeHtml(l.person)}</span>
+      <span class="k">操作时间</span><span>${escapeHtml(l.time)}</span>
+      <span class="k">备注</span><span>${escapeHtml(l.remark || '（无）')}</span>
+    </div>
+    <div class="btn-row mt"><button class="btn ghost" onclick="this.closest('.modal-bg').remove()">关闭</button></div>
+  `);
 }
 function exportCsv() {
-  const t = document.getElementById('lg_type').value;
-  const i = document.getElementById('lg_item').value.trim().toLowerCase();
-  const p = document.getElementById('lg_person').value.trim().toLowerCase();
-  const rows = [['时间', '类型', '物品', '规格', '单位', '变动前', '数量', '变动后', '操作人', '备注']];
-  STATE.logs.filter(l =>
-    (!t || l.type === t) &&
-    (!i || l.itemName.toLowerCase().includes(i)) &&
-    (!p || l.person.toLowerCase().includes(p))
-  ).forEach(l => {
-    rows.push([l.time, typeText(l.type), l.itemName, l.spec || '', l.unit || '',
-      l.before, l.qty, l.after, l.person, l.remark || '']);
+  const rows = [['时间', '单据类型', '物品', '规格', '单位', '变动前', '数量', '变动后', '操作人', '备注']];
+  matchLogs(logFilters()).forEach(l => {
+    rows.push([l.time, logTag(l)[1], l.itemName, l.spec || '', l.unit || '',
+      l.before == null ? '' : l.before, l.qty, l.after == null ? '' : l.after, l.person, l.remark || '']);
   });
   const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
