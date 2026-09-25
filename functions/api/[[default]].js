@@ -114,6 +114,7 @@ function emptyDb() {
     items: [],      // {id, code, name, spec, category, unit, qty, minQty, createdAt}
     logs: [],       // {id, time, type, itemId, itemName, spec, unit, before, qty, after, person, remark}
     requests: [],   // {id, type, itemId, itemName, spec, unit, currentQty, qty, reason, applicantId, applicant, time, status, approver, approveTime, note, doneTime, doneQty, doneItemId}
+    stocktakes: [], // {id, time, admin, adminId, rows:[{itemId, itemName, spec, unit, bookQty, actualQty, diff}]}
     sessions: {},   // token -> {userId, createdAt, lastSeen}
   };
 }
@@ -129,6 +130,7 @@ async function loadDb(kv) {
       items: Array.isArray(d.items) ? d.items : [],
       logs: Array.isArray(d.logs) ? d.logs : [],
       requests: Array.isArray(d.requests) ? d.requests : [],
+      stocktakes: Array.isArray(d.stocktakes) ? d.stocktakes : [],
       sessions: (d.sessions && typeof d.sessions === 'object') ? d.sessions : {},
     };
   } catch (e) {
@@ -267,6 +269,8 @@ function pubState(db, u) {
       .sort((a, b) => S(a.createdAt).localeCompare(S(b.createdAt)))
       .map(x => ({ id: x.id, name: x.name, role: x.role, createdAt: S(x.createdAt) }));
     st.pendingCount = db.requests.filter(r => r.status === 'pending').length;
+    st.stocktakes = (db.stocktakes || [])
+      .slice().sort((a, b) => S(b.time).localeCompare(S(a.time))).slice(0, 50);
   }
   return st;
 }
@@ -444,29 +448,41 @@ export async function onRequest(context) {
     return json({ ok: true });
   }
 
-  /* ---------- POST /api/items 物品管理（需入库权限） ---------- */
+  /* ---------- POST /api/items 物品档案管理（仅管理员） ---------- */
   if (path === '/api/items' && method === 'POST') {
     if (!user) return needLogin();
-    if (!canIn(user)) return json({ error: '需要入库/建档权限' }, 403);
+    if (!isAdmin(user)) return json({ error: '物品档案的新增、编辑、删除仅管理员可操作' }, 403);
     const action = body.action;
 
     if (action === 'add') {
       const name = String(body.name || '').trim();
       if (!name) return ERR('请填写物品名称');
+      const cat = String(body.category || '').trim();
+      // 重复建档校验：同分类下同名物品
+      if (db.items.find(x => x.name === name && String(x.category || '') === cat)) {
+        return ERR('该分类下此物品已存在，请勿重复建档，请直接对现有物品增减数量');
+      }
       const code = 'WL' + String(db.items.length + 1).padStart(3, '0');
       const initQty = Math.max(0, Number(body.initQty) || 0);
       const id = uid();
       const item = {
         id, code, name,
         spec: String(body.spec || '').trim(),
-        category: String(body.category || '').trim(),
+        category: cat,
         unit: String(body.unit || '').trim() || '件',
         qty: initQty,
         minQty: Math.max(0, Number(body.minQty) || 0),
         needDamage: !!body.needDamage,
+        barcode: String(body.barcode || '').trim(),
         createdAt: today(),
       };
       db.items.push(item);
+      db.logs.push({
+        id: uid(), time: nowStr(), type: 'file', itemId: id, itemName: name,
+        spec: item.spec, unit: item.unit,
+        before: 0, qty: 0, after: initQty,
+        person: user.name, remark: `新增档案 · 分类：${cat || '未分类'}`,
+      });
       if (initQty > 0) {
         db.logs.push({
           id: uid(), time: nowStr(), type: 'init', itemId: id, itemName: name,
@@ -483,19 +499,42 @@ export async function onRequest(context) {
       const it = db.items.find(x => x.id === body.id);
       if (!it) return ERR('物品不存在');
       const name = String(body.name || '').trim();
-      if (name) it.name = name;
+      const cat = String(body.category || '').trim();
+      if (name) {
+        // 重名校验：同分类下其他物品与改名后的名称冲突
+        if (db.items.find(x => x.id !== it.id && x.name === name && String(x.category || '') === cat)) {
+          return ERR('该分类下此物品已存在，请勿重复建档，请直接对现有物品增减数量');
+        }
+        it.name = name;
+      }
       it.spec = String(body.spec || '').trim();
-      it.category = String(body.category || '').trim();
+      it.category = cat;
       const unit = String(body.unit || '').trim();
       if (unit) it.unit = unit;
       it.minQty = Math.max(0, Number(body.minQty) || 0);
       it.needDamage = !!body.needDamage;
+      if (body.barcode !== undefined) it.barcode = String(body.barcode || '').trim();
+      db.logs.push({
+        id: uid(), time: nowStr(), type: 'file', itemId: it.id, itemName: it.name,
+        spec: it.spec, unit: it.unit,
+        before: null, qty: 0, after: it.qty,
+        person: user.name, remark: `档案修改 · 分类：${it.category || '未分类'} · 预警线：${it.minQty}`,
+      });
       await saveDb(kv, db);
       return json({ ok: true });
     }
 
     if (action === 'delete') {
+      const it = db.items.find(x => x.id === body.id);
       db.items = db.items.filter(x => x.id !== body.id);
+      if (it) {
+        db.logs.push({
+          id: uid(), time: nowStr(), type: 'file', itemId: it.id, itemName: it.name,
+          spec: it.spec, unit: it.unit,
+          before: it.qty, qty: 0, after: 0,
+          person: user.name, remark: '档案删除（历史流水保留）',
+        });
+      }
       await saveDb(kv, db);
       return json({ ok: true });
     }
@@ -515,6 +554,8 @@ export async function onRequest(context) {
       items = [{ itemId: body.itemId, newName: body.newName, spec: body.spec, unit: body.unit, minQty: body.minQty, qty: body.qty, remark: body.remark || '' }];
     }
     if (items.length === 0) return ERR('请至少添加一种入库物品');
+    // 归还入库（活动退回）：mode=return 时单据标记「活动退回」
+    const isReturn = body.mode === 'return';
 
     // 重复提交提醒（同一人当天相同物品+数量）
     const dupRows = items.map(row => {
@@ -541,6 +582,7 @@ export async function onRequest(context) {
         if (!qty || qty <= 0) return ERR(`「${newName || (it ? it.name : '物品')}」数量必须大于 0`);
         db.requests.push({
           id: uid(), type: 'in',
+          sub: isReturn ? 'return' : '',
           itemId: it ? it.id : '',
           itemName: newName || it.name,
           spec: String(row.spec || '').trim() || (it ? it.spec : ''),
@@ -584,6 +626,7 @@ export async function onRequest(context) {
             unit: String(row.unit || '').trim() || '件',
             qty: 0, minQty: Math.max(0, Number(row.minQty) || 0),
             needDamage: !!row.needDamage,
+            barcode: String(row.barcode || '').trim(),
             createdAt: today(),
           };
           db.items.push(it);
@@ -598,16 +641,16 @@ export async function onRequest(context) {
       const after = before + qty;
       it.qty = after;
       db.logs.push({
-        id: uid(), time: nowStr(), type: 'in', itemId: it.id, itemName: it.name,
+        id: uid(), time: nowStr(), type: 'in', sub: isReturn ? 'return' : '', itemId: it.id, itemName: it.name,
         spec: it.spec, unit: it.unit,
         before, qty, after,
         person: user.name,
-        remark: (isNew ? '新物品建档入库 · ' : '') + String(row.remark || ''),
+        remark: (isReturn ? '活动退回 · ' : '') + (isNew ? '新物品建档入库 · ' : '') + String(row.remark || ''),
       });
       results.push({ itemId: it.id, name: it.name, before, after, unit: it.unit, created: isNew });
     }
     await saveDb(kv, db);
-    return json({ ok: true, count: results.length, results });
+    return json({ ok: true, count: results.length, results, mode: isReturn ? 'return' : 'in' });
   }
 
   /* ---------- POST /api/upload 上传出库照片（base64 → Supabase Storage） ---------- */
@@ -697,7 +740,7 @@ export async function onRequest(context) {
       for (const row of rows) {
         const it = db.items.find(x => x.id === row.itemId);
         const qty = Number(row.qty);
-        if (qty > Number(it.qty)) return ERR(`「${it.name}」超过当前库存（现存 ${it.qty} ${it.unit}）`);
+        if (qty > Number(it.qty)) return ERR(`「${it.name}」库存不足，无法完成出库，请提交采买申请（现存 ${it.qty} ${it.unit}）`);
         const before = Number(it.qty);
         const after = before - qty;
         it.qty = after;
@@ -717,7 +760,7 @@ export async function onRequest(context) {
       const type = row.type;
       const it = db.items.find(x => x.id === row.itemId);
       const qty = Number(row.qty);
-      if (qty > Number(it.qty)) return ERR(`「${it.name}」超过当前库存（现存 ${it.qty} ${it.unit}）`);
+      if (qty > Number(it.qty)) return ERR(`「${it.name}」库存不足，无法完成出库，请提交采买申请（现存 ${it.qty} ${it.unit}）`);
       // 照片字段保留兼容（不再强制：报损无需拍照）
       const photo = String(row.photo || '').trim();
       db.requests.push({
@@ -746,11 +789,30 @@ export async function onRequest(context) {
       rows = [{ itemName: body.itemName, spec: body.spec, unit: body.unit, qty: body.qty, reason: body.reason || '' }];
     }
     if (rows.length === 0) return ERR('请至少添加一种采买物品');
+    let autoRejected = 0;
+    const pendingCount0 = rows.length;
     for (const row of rows) {
       const name = String(row.itemName || '').trim();
       const qty = Number(row.qty);
       if (!name) return ERR('请填写需要采买的物品名称');
       if (!qty || qty <= 0) return ERR(`「${name}」数量必须大于 0`);
+      // 库存校验：物品档案里已有该物品且库存充足 → 系统自动驳回
+      const exist = db.items.find(x => x.name === name);
+      if (exist && Number(exist.qty) >= qty) {
+        db.requests.push({
+          id: uid(), type: 'buy', itemId: exist.id, itemName: name,
+          spec: exist.spec || String(row.spec || '').trim(),
+          unit: exist.unit || String(row.unit || '').trim() || '件',
+          currentQty: Number(exist.qty), qty,
+          reason: String(row.reason || '').trim(),
+          applicantId: user.id, applicant: user.name,
+          time: nowStr(), status: 'rejected', approver: '系统', approveTime: nowStr(),
+          note: '当前库存充足，请直接出库',
+          doneTime: '', doneQty: null, doneItemId: '',
+        });
+        autoRejected++;
+        continue;
+      }
       db.requests.push({
         id: uid(), type: 'buy', itemId: '', itemName: name,
         spec: String(row.spec || '').trim(),
@@ -763,7 +825,7 @@ export async function onRequest(context) {
       });
     }
     await saveDb(kv, db);
-    return json({ ok: true, count: rows.length });
+    return json({ ok: true, count: pendingCount0 - autoRejected, autoRejected });
   }
 
   /* ---------- POST /api/cancelreq 撤回申请 ---------- */
@@ -826,11 +888,11 @@ export async function onRequest(context) {
         const after = before + Number(r.qty);
         it.qty = after;
         db.logs.push({
-          id: uid(), time: nowStr(), type: 'in', itemId: it.id, itemName: it.name,
+          id: uid(), time: nowStr(), type: 'in', sub: r.sub || '', itemId: it.id, itemName: it.name,
           spec: it.spec, unit: it.unit,
           before, qty: Number(r.qty), after,
           person: r.applicant,
-          remark: `审批通过 · ${r.reason || '入库'}`,
+          remark: (r.sub === 'return' ? '活动退回 · ' : '') + `审批通过 · ${r.reason || '入库'}`,
         });
         r.status = 'approved';
         r.approveTime = nowStr();
@@ -851,7 +913,7 @@ export async function onRequest(context) {
           r.status = 'rejected'; r.approveTime = nowStr();
           r.approver = user.name; r.note = '库存不足，自动驳回';
           await saveDb(kv, db);
-          return ERR(`库存不足（现存 ${it.qty}），已自动驳回`);
+          return ERR(`「${it.name}」库存不足，无法完成出库，请提交采买申请（现存 ${it.qty} ${it.unit}）`);
         }
         const before = Number(it.qty);
         const after = before - r.qty;
@@ -914,7 +976,7 @@ export async function onRequest(context) {
     const after = before + qty;
     it.qty = after;
     db.logs.push({
-      id: uid(), time: nowStr(), type: 'in', itemId: it.id, itemName: it.name,
+      id: uid(), time: nowStr(), type: 'in', sub: 'purchase', itemId: it.id, itemName: it.name,
       spec: it.spec, unit: it.unit,
       before, qty, after,
       person: r.applicant,
@@ -926,6 +988,42 @@ export async function onRequest(context) {
     r.doneItemId = it.id;
     await saveDb(kv, db);
     return json({ ok: true });
+  }
+
+  /* ---------- POST /api/stocktake 库存盘点（仅管理员，记录永久保存） ---------- */
+  if (path === '/api/stocktake' && method === 'POST') {
+    if (!user) return needLogin();
+    if (!isAdmin(user)) return json({ error: '库存盘点仅管理员可用' }, 403);
+    const rows = Array.isArray(body.rows) ? body.rows : [];
+    if (rows.length === 0) return ERR('请填写盘点数量');
+    const rec = { id: uid(), time: nowStr(), admin: user.name, adminId: user.id, adjusted: !!body.adjust, rows: [] };
+    for (const row of rows) {
+      const it = db.items.find(x => x.id === row.itemId);
+      if (!it) continue;
+      const actual = Number(row.actual);
+      if (isNaN(actual) || actual < 0) return ERR(`「${it.name}」盘点数量不能为空或负数`);
+      const book = Number(it.qty);
+      rec.rows.push({ itemId: it.id, itemName: it.name, spec: it.spec || '', unit: it.unit, bookQty: book, actualQty: actual, diff: actual - book });
+    }
+    if (rec.rows.length === 0) return ERR('没有有效的盘点行');
+    if (body.adjust) {
+      for (const rr of rec.rows) {
+        if (rr.diff === 0) continue;
+        const it = db.items.find(x => x.id === rr.itemId);
+        it.qty = rr.actualQty;
+        db.logs.push({
+          id: uid(), time: nowStr(), type: 'stocktake', itemId: it.id, itemName: it.name,
+          spec: it.spec, unit: it.unit,
+          before: rr.bookQty, qty: Math.abs(rr.diff), after: rr.actualQty,
+          person: user.name,
+          remark: rr.diff > 0 ? `盘盈调账（盘点单 ${rec.time}）` : `盘亏调账（盘点单 ${rec.time}）`,
+        });
+      }
+    }
+    db.stocktakes = db.stocktakes || [];
+    db.stocktakes.push(rec);
+    await saveDb(kv, db);
+    return json({ ok: true, id: rec.id, count: rec.rows.length, gain: rec.rows.filter(x => x.diff > 0).length, loss: rec.rows.filter(x => x.diff < 0).length });
   }
 
   /* ---------- POST /api/users 用户管理（管理员） ---------- */
