@@ -213,6 +213,7 @@ tr:hover td { background: #FAFBFC; }
 .ig-card.out { border-color: #f2c4c4; background: #fdf3f3; }
 .ig-card.warn { border-color: #f0dcb4; background: #fdf9ef; }
 .ig-card .damage-tag { position: absolute; top: 8px; right: 8px; }
+.ig-card.bmode { padding-left: 34px; }
 .ig-card.bsel { outline: 2px solid var(--primary); outline-offset: -2px; }
 .ig-card .bchk { position: absolute; top: 6px; left: 6px; width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--primary); background: #fff; display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--primary); font-weight: 700; box-sizing: border-box; }
 .ig-card.bsel .bchk { background: var(--primary); color: #fff; }
@@ -780,7 +781,7 @@ function renderItemsByCat(items) {
             const out = Number(it.qty) === 0;
             const selCls = BATCH.on && BATCH.sel[it.id] ? ' bsel' : '';
             const click = BATCH.on ? `toggleBatchSel('${it.id}')` : `showItemHistory('${it.id}')`;
-            return `<div class="ig-card${selCls} ${out ? 'out' : low ? 'warn' : ''}" onclick="${click}" data-id="${it.id}">
+            return `<div class="ig-card${selCls} ${BATCH.on ? 'bmode ' : ''}${out ? 'out' : low ? 'warn' : ''}" onclick="${click}" data-id="${it.id}">
               ${BATCH.on ? `<div class="bchk">${BATCH.sel[it.id] ? '✓' : ''}</div>` : ''}
               <div class="nm">${escapeHtml(it.name)}${it.needDamage ? '<span class="damage-tag">需报损</span>' : ''}</div>
               ${it.spec ? `<div class="sp">${escapeHtml(it.spec)}</div>` : ''}
