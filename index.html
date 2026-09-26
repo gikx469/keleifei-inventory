@@ -220,8 +220,6 @@ tr:hover td { background: #FAFBFC; }
 .mode-tabs { display: flex; gap: 8px; margin-bottom: 12px; }
 .mode-tab { flex: 1; padding: 10px; text-align: center; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; font-size: 13px; color: var(--text-light); }
 .mode-tab.on { background: var(--primary-light); border-color: var(--primary); color: var(--primary-dark); font-weight: 600; }
-#scanVideo { width: 100%; max-height: 320px; border-radius: 10px; background: #000; display: none; }
-.scan-tip { font-size: 12px; color: var(--text-light); margin-top: 6px; }
 .detail-grid { display: grid; grid-template-columns: 84px 1fr; gap: 6px 10px; font-size: 13px; }
 .detail-grid .k { color: var(--text-light); }
 .stk-row { display: grid; grid-template-columns: 1fr 70px 70px 70px; gap: 6px; align-items: center; padding: 6px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
@@ -623,7 +621,7 @@ function renderHome() {
   // 宫格入口
   const cards = [
     { id: 'items', icon: '📦', name: '物品清单', desc: `共 ${total} 种`, color: 'c-blue', show: true },
-    { id: 'inbound', icon: '📥', name: '入库', desc: '采购 / 扫码 / 归还', color: 'c-mint', show: canIn },
+    { id: 'inbound', icon: '📥', name: '入库', desc: '采购 / 归还', color: 'c-mint', show: canIn },
     { id: 'apply', icon: '📤', name: '出库 / 采买', desc: '领用登记', color: 'c-pink', show: true },
     { id: 'approve', icon: '✅', name: '审批', desc: STATE.pendingCount ? `${STATE.pendingCount} 条待审` : '无待审', color: 'c-lavender', show: isAdmin, badge: STATE.pendingCount },
     { id: 'alerts', icon: '⚠️', name: '库存预警', desc: '独立专区', color: 'c-peach', show: canIn },
@@ -1040,9 +1038,9 @@ async function delItem(id) {
 }
 
 /* ============================================================
- * 📥 入库（手动录入 / 扫码条码 / 归还入库）
+ * 📥 入库（手动录入 / 归还入库）
  * ============================================================ */
-const INB = { mode: 'manual', kind: 'in' }; // mode: manual|scan  kind: in|return(活动退回)
+const INB = { kind: 'in' }; // kind: in|return(活动退回)
 // 分类下的物品选项（归还入库不允许建新物品）
 function inboundItemOpts(cat, allowNew) {
   const list = STATE.items.filter(it => catOf(it) === cat)
@@ -1104,14 +1102,10 @@ function toggleInboundNew(sel) {
   if (isNew) { const nm = row.querySelector('.in_new_name'); if (nm) nm.focus(); }
 }
 function renderInbound() {
-  INB.mode = 'manual'; INB.kind = 'in';
+  INB.kind = 'in';
   return `
     <div class="card">
       <h2>📥 入库</h2>
-      <div class="mode-tabs">
-        <div class="mode-tab on" id="mt_manual" onclick="setInbMode('manual')">⌨️ 手动录入</div>
-        <div class="mode-tab" id="mt_scan" onclick="setInbMode('scan')">📷 扫码条形码入库</div>
-      </div>
       <div class="mode-tabs">
         <div class="mode-tab on" id="kt_in" onclick="setInbKind('in')">📥 正常入库</div>
         <div class="mode-tab" id="kt_return" onclick="setInbKind('return')">↩️ 归还入库（活动退回）</div>
@@ -1123,11 +1117,6 @@ function renderInbound() {
           ${cats().map(c => `<option value="${c}">${c}</option>`).join('')}
         </select>
       </div>
-      <div id="scanBox" style="display:none">
-        <video id="scanVideo" autoplay playsinline muted></video>
-        <div class="btn-row mt"><button class="btn" id="scanBtn" onclick="toggleScan()">📷 开始扫码</button></div>
-        <div class="scan-tip">对准物品条形码自动识别并填入；识别不了？切回「手动录入」模式即可，不阻断入库流程。</div>
-      </div>
       <div class="text-light mb">管理员入库立即生效并记录流水；授权人员提交后等管理员审批。先选分类区域，再录入物品。</div>
       <div id="inboundList" class="batch-list">${inboundRowHtml(0, true)}</div>
       <button type="button" class="batch-add" onclick="addInboundRow()">＋ 添加一种物品</button>
@@ -1137,13 +1126,6 @@ function renderInbound() {
       </div>
     </div>
   `;
-}
-function setInbMode(m) {
-  INB.mode = m;
-  document.getElementById('mt_manual').classList.toggle('on', m === 'manual');
-  document.getElementById('mt_scan').classList.toggle('on', m === 'scan');
-  document.getElementById('scanBox').style.display = m === 'scan' ? 'block' : 'none';
-  if (m !== 'scan') stopScan();
 }
 function setInbKind(k) {
   INB.kind = k;
@@ -1250,65 +1232,6 @@ async function doInbound() {
     await refreshState();
     renderTab(STATE.tab);
   } catch (e) { toast(e.message, 'error'); }
-}
-// 扫码入库（BarcodeDetector，不支持时提示切手动，不阻断流程）
-let scanStream = null, scanTimer = null, scanDetector = null;
-async function toggleScan() {
-  if (scanStream) { stopScan(); return; }
-  if (!('BarcodeDetector' in window)) {
-    toast('当前浏览器不支持摄像头扫码，请切换「手动录入」模式', 'warning');
-    return;
-  }
-  try {
-    scanDetector = new BarcodeDetector();
-    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-    const v = document.getElementById('scanVideo');
-    v.style.display = 'block';
-    v.srcObject = scanStream;
-    await v.play();
-    document.getElementById('scanBtn').textContent = '⏹ 停止扫码';
-    scanTimer = setInterval(async () => {
-      try {
-        if (!v.videoWidth) return;
-        const codes = await scanDetector.detect(v);
-        if (codes && codes.length) handleScanCode(codes[0].rawValue);
-      } catch (e) { /* 单帧失败忽略 */ }
-    }, 500);
-  } catch (e) {
-    toast('无法打开摄像头，请改用手动录入', 'error');
-    stopScan();
-  }
-}
-function stopScan() {
-  if (scanTimer) { clearInterval(scanTimer); scanTimer = null; }
-  if (scanStream) { scanStream.getTracks().forEach(t => t.stop()); scanStream = null; }
-  const v = document.getElementById('scanVideo');
-  if (v) { v.style.display = 'none'; v.srcObject = null; }
-  const btn = document.getElementById('scanBtn');
-  if (btn) btn.textContent = '📷 开始扫码';
-}
-function handleScanCode(raw) {
-  const code = String(raw || '').trim();
-  if (!code) return;
-  const it = STATE.items.find(x => (x.barcode || '') === code);
-  if (!it) {
-    toast(`条码 ${code} 未绑定物品，可在物品档案中绑定条码，或切回手动录入`, 'warning');
-    return;
-  }
-  // 分类联动
-  const catSel = document.getElementById('in_cat');
-  if (catOf(it) !== catSel.value) {
-    catSel.value = catOf(it);
-    onInCatChange();
-  }
-  // 填入第一个空行，否则新增一行
-  let row = Array.from(document.querySelectorAll('#inboundList .batch-row'))
-    .find(r => !r.querySelector('.in_item').value);
-  if (!row) { addInboundRow(); row = document.querySelector('#inboundList .batch-row:last-child'); }
-  row.querySelector('.in_item').value = it.id;
-  row.querySelector('.in_qty').focus();
-  if (navigator.vibrate) navigator.vibrate(80);
-  toast(`✓ 已识别：${it.name}（${catOf(it)}），请填写数量`, 'success');
 }
 function quickInbound(id) {
   switchTab('inbound');
