@@ -213,6 +213,9 @@ tr:hover td { background: #FAFBFC; }
 .ig-card.out { border-color: #f2c4c4; background: #fdf3f3; }
 .ig-card.warn { border-color: #f0dcb4; background: #fdf9ef; }
 .ig-card .damage-tag { position: absolute; top: 8px; right: 8px; }
+.ig-card.bsel { outline: 2px solid var(--primary); outline-offset: -2px; }
+.ig-card .bchk { position: absolute; top: 6px; left: 6px; width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--primary); background: #fff; display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--primary); font-weight: 700; box-sizing: border-box; }
+.ig-card.bsel .bchk { background: var(--primary); color: #fff; }
 .mode-tabs { display: flex; gap: 8px; margin-bottom: 12px; }
 .mode-tab { flex: 1; padding: 10px; text-align: center; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; font-size: 13px; color: var(--text-light); }
 .mode-tab.on { background: var(--primary-light); border-color: var(--primary); color: var(--primary-dark); font-weight: 600; }
@@ -742,11 +745,13 @@ function renderItems() {
     <div class="card">
       <div class="flex between">
         <h2>📦 物品清单（${STATE.items.length}）</h2>
-        ${isAdmin ? `<button class="btn" onclick="showAddItem()">➕ 新增物品</button>` : ''}
+        ${isAdmin ? `<button class="btn ghost" onclick="toggleBatchMode()">${BATCH.on ? '✖️ 退出批量' : '☑️ 批量选择'}</button>` : ''}
+        ${isAdmin && !BATCH.on ? `<button class="btn" onclick="showAddItem()">➕ 新增物品</button>` : ''}
       </div>
       <div class="row">
         <input id="itemSearch" placeholder="🔍 输入物品名称快速检索..." oninput="filterItems()" style="max-width: 300px;">
       </div>
+      ${BATCH.on ? batchPanel() : ''}
       <div id="itemsList">
         ${renderItemsByCat(STATE.items)}
       </div>
@@ -773,7 +778,10 @@ function renderItemsByCat(items) {
           ${list.map(it => {
             const low = Number(it.qty) <= Number(it.minQty) && Number(it.minQty) > 0;
             const out = Number(it.qty) === 0;
-            return `<div class="ig-card ${out ? 'out' : low ? 'warn' : ''}" onclick="showItemHistory('${it.id}')">
+            const selCls = BATCH.on && BATCH.sel[it.id] ? ' bsel' : '';
+            const click = BATCH.on ? `toggleBatchSel('${it.id}')` : `showItemHistory('${it.id}')`;
+            return `<div class="ig-card${selCls} ${out ? 'out' : low ? 'warn' : ''}" onclick="${click}" data-id="${it.id}">
+              ${BATCH.on ? `<div class="bchk">${BATCH.sel[it.id] ? '✓' : ''}</div>` : ''}
               <div class="nm">${escapeHtml(it.name)}${it.needDamage ? '<span class="damage-tag">需报损</span>' : ''}</div>
               ${it.spec ? `<div class="sp">${escapeHtml(it.spec)}</div>` : ''}
               ${it.location ? `<div class="sp">📍 ${escapeHtml(it.location)}</div>` : '<div class="sp" style="opacity:.45">📍 未设区域</div>'}
@@ -816,6 +824,74 @@ function restoreItemsUI() {
     });
   }
   if (ITUI.scroll) window.scrollTo(0, ITUI.scroll);
+}
+/* ---------- 批量选择：统一修改所在区域 / 分类（仅管理员） ---------- */
+const BATCH = { on: false, sel: {} };
+function toggleBatchMode() {
+  BATCH.on = !BATCH.on;
+  BATCH.sel = {};
+  renderTab('items');
+}
+function batchPanel() {
+  const n = Object.keys(BATCH.sel).length;
+  return `
+    <div style="border:1px dashed var(--primary);border-radius:8px;padding:10px;margin:8px 0;background:#f4fbff">
+      <div class="flex between" style="align-items:center;margin-bottom:6px">
+        <b style="color:var(--primary)">已选 <span id="batch_cnt">${n}</span> 件物品</b>
+        <div>
+          <button class="btn ghost" style="padding:4px 10px;font-size:12px" onclick="batchSelAll()">全选当前列表</button>
+          <button class="btn ghost" style="padding:4px 10px;font-size:12px" onclick="batchClearSel()">清空选择</button>
+        </div>
+      </div>
+      <div class="row"><label>所在区域（留空则不修改）</label><input id="b_loc" placeholder="如：A 柜第二层、西墙货架"></div>
+      <div class="row"><label>分类（选「不修改」则保持原分类）</label><select id="b_cat" onchange="document.getElementById('b_cat_row').style.display=this.value==='__custom__'?'flex':'none'">
+        <option value="">不修改分类</option>${catOptions('', true)}</select></div>
+      <div class="row" id="b_cat_row" style="display:none"><label>新分类名（自动加入分类列表）</label><input id="b_cat_custom" placeholder="如：乐器区"></div>
+      <div class="btn-row mt">
+        <button class="btn" onclick="applyBatch()">✅ 应用到所选（<span id="batch_cnt2">${n}</span>）</button>
+      </div>
+    </div>`;
+}
+function batchCount() { return Object.keys(BATCH.sel).length; }
+function toggleBatchSel(id) {
+  if (BATCH.sel[id]) delete BATCH.sel[id]; else BATCH.sel[id] = true;
+  // 只更新当前卡片样式，不重渲染（避免清掉已填的批量输入框）
+  const el = document.querySelector(`.ig-card[data-id="${id}"]`);
+  if (el) {
+    el.classList.toggle('bsel', !!BATCH.sel[id]);
+    const chk = el.querySelector('.bchk');
+    if (chk) chk.textContent = BATCH.sel[id] ? '✓' : '';
+  }
+  const c1 = document.getElementById('batch_cnt'), c2 = document.getElementById('batch_cnt2');
+  if (c1) c1.textContent = batchCount();
+  if (c2) c2.textContent = batchCount();
+}
+function batchSelAll() {
+  const q = (document.getElementById('itemSearch')?.value || '').trim().toLowerCase();
+  STATE.items.filter(it => !q ||
+    it.name.toLowerCase().includes(q) || (it.spec || '').toLowerCase().includes(q) || (it.barcode || '').includes(q)
+  ).forEach(it => BATCH.sel[it.id] = true);
+  renderTab('items');
+}
+function batchClearSel() { BATCH.sel = {}; renderTab('items'); }
+async function applyBatch() {
+  const ids = Object.keys(BATCH.sel);
+  if (!ids.length) { toast('请先点选要修改的物品卡片', 'warning'); return; }
+  const loc = document.getElementById('b_loc')?.value.trim() || '';
+  let cat = document.getElementById('b_cat')?.value || '';
+  if (cat === '__custom__') cat = document.getElementById('b_cat_custom')?.value.trim() || '';
+  if (!loc && !cat) { toast('所在区域和分类至少填写一项', 'warning'); return; }
+  const parts = [];
+  if (loc) parts.push(`所在区域设为「${loc}」`);
+  if (cat) parts.push(`分类改为「${cat}」`);
+  if (!confirm(`将把所选 ${ids.length} 件物品的${parts.join('、')}，确认？`)) return;
+  try {
+    const r = await api('/items', 'POST', { action: 'batch', ids, location: loc, category: cat });
+    toast(`✅ 已批量修改 ${r.count} 件物品`, 'success');
+    BATCH.sel = {};
+    await refreshState();
+    renderTab('items');
+  } catch (e) { toast(e.message, 'error'); }
 }
 // 物品履历（仅管理员）：单个物品完整库存变动流水
 function showItemHistory(id) {
