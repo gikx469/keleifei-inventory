@@ -535,6 +535,7 @@ function afterLogin(state) {
   STATE.users = state.users || [];
   STATE.pendingCount = state.pendingCount || 0;
   STATE.stocktakes = state.stocktakes || [];
+  STATE.cats = Array.isArray(state.cats) && state.cats.length ? state.cats : DEFAULT_CATS;
   STATE.serverTime = state.serverTime;
   renderApp();
 }
@@ -645,7 +646,7 @@ function renderHome() {
         <div class="lbl">流水记录</div>
       </div>
       <div class="wb-stat s-pink">
-        <div class="num">${CATS.length}</div>
+        <div class="num">${cats().length}</div>
         <div class="lbl">分类区域</div>
       </div>
     </div>
@@ -696,11 +697,22 @@ function renderHome() {
 function typeText(t) {
   return { in: '入库', out: '出库', damage: '报损', init: '建档', buy: '采买', file: '档案', stocktake: '盘点' }[t] || t;
 }
-// 一级分类清单
-const CATS = ['纸张区', '颜料区', '笔具区', '辅助工具区', '手工耗材区', '防护收纳区', '宣传区'];
-function catOf(it) { return CATS.includes(it.category) ? it.category : '其他'; }
-function catOptions(sel) {
-  return CATS.map(c => `<option value="${c}" ${c === sel ? 'selected' : ''}>${c}</option>`).join('') + `<option value="" ${!sel ? 'selected' : ''}>其他 / 未分类</option>`;
+// 一级分类清单（管理员可在「设置」中增删改；数据未下发时用默认值）
+const DEFAULT_CATS = ['纸张区', '颜料区', '笔具区', '辅助工具区', '手工耗材区', '防护收纳区', '宣传区'];
+function cats() { return (Array.isArray(STATE.cats) && STATE.cats.length) ? STATE.cats : DEFAULT_CATS; }
+function catOf(it) { return cats().includes(it.category) ? it.category : '其他'; }
+function catOptions(sel, withCustom) {
+  return cats().map(c => `<option value="${c}" ${c === sel ? 'selected' : ''}>${c}</option>`).join('')
+    + `<option value="" ${!sel ? 'selected' : ''}>其他 / 未分类</option>`
+    + (withCustom ? `<option value="__custom__" ${sel && !cats().includes(sel) && sel !== '' ? 'selected' : ''}>✏️ 手动填写分类…</option>` : '');
+}
+// 分类下拉切换到「手动填写」时展开输入框
+function toggleCatCustom(sel) {
+  const box = document.getElementById('f_cat_custom_row');
+  if (!box) return;
+  const custom = sel.value === '__custom__';
+  box.style.display = custom ? 'flex' : 'none';
+  if (custom) document.getElementById('f_cat_custom')?.focus();
 }
 // 单据类型标签：活动退回 / 采购入库 / 正常出库 等
 function logTag(l) {
@@ -741,7 +753,7 @@ function renderItems() {
 // 按分类分组展示：点开分类显示该分类下物品实时库存，一行 2-3 个
 function renderItemsByCat(items) {
   const groups = {};
-  for (const c of [...CATS, '其他']) groups[c] = [];
+  for (const c of [...cats(), '其他']) groups[c] = [];
   for (const it of items) groups[catOf(it)].push(it);
   let html = '';
   for (const c of Object.keys(groups)) {
@@ -761,6 +773,7 @@ function renderItemsByCat(items) {
             return `<div class="ig-card ${out ? 'out' : low ? 'warn' : ''}" onclick="showItemHistory('${it.id}')">
               <div class="nm">${escapeHtml(it.name)}${it.needDamage ? '<span class="damage-tag">需报损</span>' : ''}</div>
               ${it.spec ? `<div class="sp">${escapeHtml(it.spec)}</div>` : ''}
+              ${it.location ? `<div class="sp">📍 ${escapeHtml(it.location)}</div>` : ''}
               <div class="qt">${it.qty}<small> ${escapeHtml(it.unit)}</small></div>
               <div class="sp">预警线 ${it.minQty}</div>
             </div>`;
@@ -784,7 +797,7 @@ function showItemHistory(id) {
   const rows = STATE.logs.filter(l => l.itemId === id);
   modal(`
     <h3>📜 ${escapeHtml(it.name)} · 库存变动流水</h3>
-    <div class="text-light mb">分类：${escapeHtml(catOf(it))} · 当前库存：${it.qty} ${escapeHtml(it.unit)} · 预警线：${it.minQty}</div>
+    <div class="text-light mb">分类：${escapeHtml(catOf(it))}${it.location ? ' · 所在区域：' + escapeHtml(it.location) : ''} · 当前库存：${it.qty} ${escapeHtml(it.unit)} · 预警线：${it.minQty}</div>
     ${rows.length ? `<div class="table-wrap" style="max-height:340px;overflow-y:auto"><table>
       <thead><tr><th>时间</th><th>类型</th><th>数量</th><th>变动</th><th>操作人</th><th>备注</th></tr></thead>
       <tbody>${rows.map(l => {
@@ -813,8 +826,10 @@ function filterItems() {
 function showAddItem() {
   const m = modal(`
     <h3>➕ 新增物品档案</h3>
-    <div class="row"><label>所属分类区域</label><select id="f_cat">${catOptions('')}</select></div>
+    <div class="row"><label>所属分类区域</label><select id="f_cat" onchange="toggleCatCustom(this)">${catOptions('', true)}</select></div>
+    <div class="row" id="f_cat_custom_row" style="display:none"><label>手动填写分类</label><input id="f_cat_custom" placeholder="输入自定义分类名（如：乐器区）"></div>
     <div class="row"><label>物品名称</label><input id="f_name" placeholder="如：双面胶"></div>
+    <div class="row"><label>所在区域<span class="optional-tag">选填</span></label><input id="f_location" placeholder="如：A 柜第二层、西墙货架"></div>
     <div class="row"><label>规格<span class="optional-tag">选填</span></label><input id="f_spec" placeholder="如：宽 4cm"></div>
     <div class="row"><label>单位</label><input id="f_unit" value="件"></div>
     <div class="row"><label>期初数量</label><input id="f_init" type="number" min="0" value="0"></div>
@@ -830,12 +845,18 @@ function showAddItem() {
   `);
   setTimeout(() => document.getElementById('f_name')?.focus(), 100);
 }
+function readCatField() {
+  const sel = document.getElementById('f_cat').value;
+  if (sel === '__custom__') return document.getElementById('f_cat_custom').value.trim();
+  return sel;
+}
 async function addItem() {
   const data = {
     action: 'add',
     name: document.getElementById('f_name').value.trim(),
     spec: document.getElementById('f_spec').value.trim(),
-    category: document.getElementById('f_cat').value,
+    category: readCatField(),
+    location: document.getElementById('f_location').value.trim(),
     unit: document.getElementById('f_unit').value.trim() || '件',
     initQty: Number(document.getElementById('f_init').value) || 0,
     minQty: Number(document.getElementById('f_min').value) || 0,
@@ -860,8 +881,10 @@ function showEditItem(id) {
   if (!it) return;
   modal(`
     <h3>✏️ 编辑物品档案</h3>
-    <div class="row"><label>所属分类区域</label><select id="f_cat">${catOptions(CATS.includes(it.category) ? it.category : '')}</select></div>
+    <div class="row"><label>所属分类区域</label><select id="f_cat" onchange="toggleCatCustom(this)">${catOptions(cats().includes(it.category) ? it.category : '', true)}</select></div>
+    <div class="row" id="f_cat_custom_row" style="display:none"><label>手动填写分类</label><input id="f_cat_custom" placeholder="输入自定义分类名" value="${cats().includes(it.category) ? '' : escapeHtml(it.category || '')}"></div>
     <div class="row"><label>名称</label><input id="f_name" value="${escapeHtml(it.name)}"></div>
+    <div class="row"><label>所在区域<span class="optional-tag">选填</span></label><input id="f_location" value="${escapeHtml(it.location || '')}" placeholder="如：A 柜第二层、西墙货架"></div>
     <div class="row"><label>规格<span class="optional-tag">选填</span></label><input id="f_spec" value="${escapeHtml(it.spec || '')}"></div>
     <div class="row"><label>单位</label><input id="f_unit" value="${escapeHtml(it.unit)}"></div>
     <div class="row"><label>预警线（该物品单独设置）</label><input id="f_min" type="number" min="0" value="${it.minQty}"></div>
@@ -881,7 +904,8 @@ async function editItem(id) {
     action: 'update', id,
     name: document.getElementById('f_name').value.trim(),
     spec: document.getElementById('f_spec').value.trim(),
-    category: document.getElementById('f_cat').value,
+    category: readCatField(),
+    location: document.getElementById('f_location').value.trim(),
     unit: document.getElementById('f_unit').value.trim(),
     minQty: Number(document.getElementById('f_min').value) || 0,
     needDamage: document.getElementById('f_need_damage').checked,
@@ -909,27 +933,32 @@ async function delItem(id) {
  * 📥 入库（手动录入 / 扫码条码 / 归还入库）
  * ============================================================ */
 const INB = { mode: 'manual', kind: 'in' }; // mode: manual|scan  kind: in|return(活动退回)
-// 分类下的物品选项（归还入库同样可选）
-function inboundItemOpts(cat) {
+// 分类下的物品选项（归还入库不允许建新物品）
+function inboundItemOpts(cat, allowNew) {
   const list = STATE.items.filter(it => catOf(it) === cat)
     .sort((a, b) => outFreq(b.id) - outFreq(a.id));
   return list.map(it =>
     `<option value="${it.id}">${escapeHtml(it.name)}${it.spec ? ' (' + escapeHtml(it.spec) + ')' : ''} · 现 ${it.qty} ${escapeHtml(it.unit)}</option>`
-  ).join('') + `<option value="__new__">➕ 新物品（该分类下没有，入库后自动建档）</option>`;
+  ).join('') + (allowNew ? `<option value="__new__">➕ 新物品（该分类下没有，入库后自动建档）</option>` : '');
 }
 function inboundRowHtml(idx, isFirst) {
   const cat = document.getElementById('in_cat') ? document.getElementById('in_cat').value : '';
   const isReturn = INB.kind === 'return';
+  const allowNew = !isReturn;
   return `
     <div class="batch-row" data-idx="${idx}">
       <span class="idx">#${idx + 1}</span>
       <div class="field-row">
         <label>物品</label>
-        <select class="in_item" onchange="toggleInboundNew(this)"><option value="">-- 选择物品 --</option>${inboundItemOpts(cat)}</select>
+        <select class="in_item" onchange="toggleInboundNew(this)"><option value="">-- 选择物品 --</option>${inboundItemOpts(cat, allowNew)}</select>
       </div>
       <div class="field-row in_new_fields" style="display:none">
         <label>新物品名</label>
         <input class="in_new_name" placeholder="该分类下还没有的物品名">
+      </div>
+      <div class="field-row in_new_fields" style="display:none">
+        <label>分类</label>
+        <select class="in_new_cat">${catOptions(cat)}<option value="">由管理员审批时填写</option></select>
       </div>
       <div class="field-row in_new_fields" style="display:none">
         <label>规格<span class="optional-tag">选填</span></label>
@@ -981,7 +1010,7 @@ function renderInbound() {
         <label>分类区域</label>
         <select id="in_cat" onchange="onInCatChange()" style="flex:1">
           <option value="">-- 请先选择分类区域 --</option>
-          ${CATS.map(c => `<option value="${c}">${c}</option>`).join('')}
+          ${cats().map(c => `<option value="${c}">${c}</option>`).join('')}
         </select>
       </div>
       <div id="scanBox" style="display:none">
@@ -1078,7 +1107,7 @@ async function doInbound() {
         spec: row.querySelector('.in_new_spec').value.trim(),
         unit: row.querySelector('.in_new_unit').value.trim() || '件',
         needDamage: row.querySelector('.in_new_damage').checked,
-        category: cat,
+        category: (row.querySelector('.in_new_cat') || {}).value !== undefined ? row.querySelector('.in_new_cat').value : cat,
         qty, remark,
       });
     } else {
@@ -1208,7 +1237,7 @@ function renderApply() {
         <label>分类区域</label>
         <select id="ap_cat" onchange="onApplyCatChange()" style="flex:1">
           <option value="">-- 请先选择分类区域 --</option>
-          ${CATS.map(c => `<option value="${c}">${c}</option>`).join('')}
+          ${cats().map(c => `<option value="${c}">${c}</option>`).join('')}
         </select>
       </div>
       <div id="applyList" class="batch-list">${applyRowHtml(0, 'out', true)}</div>
@@ -1451,7 +1480,13 @@ function renderApprove() {
           </div>
           <div class="text-light mb">申请人：<b>${escapeHtml(r.applicant)}</b> · 原因：${escapeHtml(r.reason || '无')}</div>
           ${r.type !== 'buy' && r.currentQty != null ? `<div class="text-light mb">当前库存：${r.currentQty} ${escapeHtml(r.unit)}${r.type === 'in' ? ' → 批准后 +' + r.qty : ' → 批准后 -' + r.qty}</div>` : ''}
-          ${r.type === 'in' && r.newItem ? `<div class="text-light mb">🆕 新物品入库（批准后自动建档：${escapeHtml(r.newItem.name)}${r.newItem.needDamage ? '，需报损' : ''}）</div>` : ''}
+          ${r.type === 'in' && r.newItem ? `<div class="text-light mb">🆕 新物品入库（批准后自动建档：${escapeHtml(r.newItem.name)}${r.newItem.needDamage ? '，需报损' : ''}${r.newItem.category ? '，已选分类：' + escapeHtml(r.newItem.category) : '，<b>未选分类</b>'}）</div>` : ''}
+          ${r.type === 'in' ? `
+          <div class="row"><label>分类区域${r.newItem && !r.newItem.category ? '<b style="color:var(--warn,#e67e22)">（申请人未填，请选择）</b>' : '<span class="optional-tag">可修正</span>'}</label>
+            <select id="ap_cat_${r.id}">${catOptions(apPrefillCat(r))}</select></div>
+          <div class="row"><label>所在区域<span class="optional-tag">选填</span></label>
+            <input id="ap_loc_${r.id}" placeholder="如：A 柜第二层、西墙货架" value="${escapeHtml(apPrefillLoc(r))}"></div>
+          ` : ''}
           ${r.photo ? `<div class="mb"><div class="text-light" style="font-size:12px;margin-bottom:4px">📸 旧物品照片（点击放大）：</div><img class="photo-preview" src="${photoUrl(r.photo)}" onclick="viewPhoto('${r.photo}')" alt="旧物品照片"></div>` : ''}
           <div class="btn-row">
             <button class="btn success" onclick="approveReq('${r.id}', 'approve')">✓ 批准</button>
@@ -1481,17 +1516,61 @@ function renderApprove() {
     </div>` : ''}
   `;
 }
+// 审批入库时预填分类/所在区域：优先已有物品档案，其次申请人填写值
+function apPrefillCat(r) {
+  if (r.itemId) { const it = STATE.items.find(x => x.id === r.itemId); if (it) return it.category || ''; }
+  return (r.newItem && r.newItem.category) || '';
+}
+function apPrefillLoc(r) {
+  if (r.itemId) { const it = STATE.items.find(x => x.id === r.itemId); if (it) return it.location || ''; }
+  return '';
+}
 async function approveReq(id, action) {
   let note = '';
   if (action === 'reject') {
     note = prompt('驳回原因（可空）：') || '';
   }
+  const payload = { id, action, note };
+  const r = STATE.requests.find(x => x.id === id);
+  if (action === 'approve' && r && r.type === 'in') {
+    const catSel = document.getElementById('ap_cat_' + id);
+    const locIn = document.getElementById('ap_loc_' + id);
+    if (catSel) payload.category = catSel.value;
+    if (locIn) payload.location = locIn.value.trim();
+    if (!payload.category && r.newItem && !r.itemId && !confirm('该新物品尚未选择分类，确定先入库（分类留空可稍后在档案中补填）吗？')) return;
+  }
   try {
-    await api('/approve', 'POST', { id, action, note });
+    await api('/approve', 'POST', payload);
     toast(action === 'approve' ? '已批准' : '已驳回', 'success');
     await refreshState();
     renderTab(STATE.tab);
   } catch (e) { toast(e.message, 'error'); }
+}
+/* —— 分类区域管理（仅管理员） —— */
+async function catApi(payload) {
+  const r = await api('/cats', 'POST', payload);
+  STATE.cats = r.cats || STATE.cats;
+  toast('已保存', 'success');
+  await refreshState();
+  renderTab(STATE.tab);
+  return r;
+}
+async function catAdd() {
+  const name = document.getElementById('newCatName').value.trim();
+  if (!name) return toast('请填写分类名称', 'warning');
+  try { await catApi({ action: 'add', name }); } catch (e) { toast(e.message, 'error'); }
+}
+async function catRename(name) {
+  const to = prompt('将「' + name + '」重命名为：', name);
+  if (!to || to === name) return;
+  try {
+    const r = await catApi({ action: 'rename', name, to: to.trim() });
+    if (r.affected) toast(`已同步更新 ${r.affected} 件物品的分类`, 'success');
+  } catch (e) { toast(e.message, 'error'); }
+}
+async function catDel(name) {
+  if (!confirm('确定删除分类「' + name + '」？仅当该分类下没有物品时才能删除。')) return;
+  try { await catApi({ action: 'del', name }); } catch (e) { toast(e.message, 'error'); }
 }
 async function buyDone(id) {
   const r = STATE.requests.find(x => x.id === id);
@@ -1715,7 +1794,7 @@ function renderStocktake() {
 }
 function stockFormGroups() {
   const idx = {};
-  for (const c of [...CATS, '其他']) idx[c] = [];
+  for (const c of [...cats(), '其他']) idx[c] = [];
   TK.rows.forEach((r, i) => {
     const it = STATE.items.find(x => x.id === r.itemId) || {};
     idx[catOf(it)].push({ r, i, it });
@@ -1833,8 +1912,8 @@ function renderExport() {
 function exportStockCsv() {
   if (!STATE.items.length) { toast('暂无物品数据', 'warning'); return; }
   downloadCsv('库存总表',
-    ['分类', '物品名称', '规格', '单位', '当前库存', '预警线', '条形码', '需报损', '建档时间'],
-    STATE.items.map(it => [catOf(it), it.name, it.spec || '', it.unit, it.qty, it.minQty, it.barcode || '', it.needDamage ? '是' : '否', it.createdAt || '']));
+['分类', '物品名称', '所在区域', '规格', '单位', '当前库存', '预警线', '条形码', '需报损', '建档时间'],
+STATE.items.map(it => [catOf(it), it.name, it.location || '', it.spec || '', it.unit, it.qty, it.minQty, it.barcode || '', it.needDamage ? '是' : '否', it.createdAt || '']));
   toast('📦 库存总表已开始下载', 'success');
 }
 function exportLogsCsv() {
@@ -2017,6 +2096,23 @@ function renderSettings() {
         `).join('')}</tbody>
       </table></div>
       <div class="text-light" style="font-size:12px;margin-top:8px">权限说明：<b>管理员</b>——物品档案增删改、库存盘点、数据导出、人员管理，出入库免审批；<b>授权入库人员</b>——可入库/出库（需管理员审批）；<b>普通老师</b>——可提出出库/报损/采买申请（需审批），仅能查看自己的记录，不可删改任何历史单据。</div>
+    </div>` : ''}
+
+    ${isAdmin ? `
+    <div class="card">
+      <h2>📁 分类区域管理</h2>
+      <div class="text-light mb">分类区域会同步应用到物品清单、入库、采买申请等所有页面；重命名会自动更新该分类下所有物品。</div>
+      <div id="catsBox" class="mb">${cats().map(c => `
+        <span style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:14px;padding:4px 10px;margin:3px">
+          ${escapeHtml(c)}
+          <a style="cursor:pointer" onclick="catRename('${escapeHtml(c)}')">✏️</a>
+          <a style="cursor:pointer;color:#e74c3c" onclick="catDel('${escapeHtml(c)}')">✕</a>
+        </span>`).join('')}
+      </div>
+      <div class="btn-row">
+        <input id="newCatName" placeholder="新分类名称，如：乐器区" style="flex:1;max-width:220px">
+        <button class="btn" onclick="catAdd()">➕ 添加分类</button>
+      </div>
     </div>` : ''}
 
     ${isAdmin ? `
