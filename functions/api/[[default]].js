@@ -115,6 +115,7 @@ function emptyDb() {
     logs: [],       // {id, time, type, itemId, itemName, spec, unit, before, qty, after, person, remark}
     requests: [],   // {id, type, itemId, itemName, spec, unit, currentQty, qty, reason, applicantId, applicant, time, status, approver, approveTime, note, doneTime, doneQty, doneItemId}
     stocktakes: [], // {id, time, admin, adminId, rows:[{itemId, itemName, spec, unit, bookQty, actualQty, diff}]}
+    cats: ['纸张区', '颜料区', '笔具区', '辅助工具区', '手工耗材区', '防护收纳区', '宣传区'], // 分类区域（管理员可增删改）
     sessions: {},   // token -> {userId, createdAt, lastSeen}
   };
 }
@@ -131,6 +132,7 @@ async function loadDb(kv) {
       logs: Array.isArray(d.logs) ? d.logs : [],
       requests: Array.isArray(d.requests) ? d.requests : [],
       stocktakes: Array.isArray(d.stocktakes) ? d.stocktakes : [],
+      cats: (Array.isArray(d.cats) && d.cats.length) ? d.cats.map(c => String(c).trim()).filter(Boolean) : base.cats,
       sessions: (d.sessions && typeof d.sessions === 'object') ? d.sessions : {},
     };
   } catch (e) {
@@ -261,6 +263,7 @@ function pubState(db, u) {
   const st = {
     me: { id: u.id, name: u.name, role: u.role },
     items, requests, logs,
+    cats: db.cats,
     serverTime: nowStr(),
   };
   if (isAdmin(u)) {
@@ -474,6 +477,7 @@ export async function onRequest(context) {
         minQty: Math.max(0, Number(body.minQty) || 0),
         needDamage: !!body.needDamage,
         barcode: String(body.barcode || '').trim(),
+        location: String(body.location || '').trim(),
         createdAt: today(),
       };
       db.items.push(item);
@@ -509,6 +513,7 @@ export async function onRequest(context) {
       }
       it.spec = String(body.spec || '').trim();
       it.category = cat;
+      it.location = String(body.location || '').trim();
       const unit = String(body.unit || '').trim();
       if (unit) it.unit = unit;
       it.minQty = Math.max(0, Number(body.minQty) || 0);
@@ -518,7 +523,7 @@ export async function onRequest(context) {
         id: uid(), time: nowStr(), type: 'file', itemId: it.id, itemName: it.name,
         spec: it.spec, unit: it.unit,
         before: null, qty: 0, after: it.qty,
-        person: user.name, remark: `档案修改 · 分类：${it.category || '未分类'} · 预警线：${it.minQty}`,
+        person: user.name, remark: `档案修改 · 分类：${it.category || '未分类'}${it.location ? ' · 所在区域：' + it.location : ''} · 预警线：${it.minQty}`,
       });
       await saveDb(kv, db);
       return json({ ok: true });
@@ -537,6 +542,46 @@ export async function onRequest(context) {
       }
       await saveDb(kv, db);
       return json({ ok: true });
+    }
+    return ERR('未知操作');
+  }
+
+  /* ---------- POST /api/cats 分类区域管理（仅管理员：新增/重命名/删除） ---------- */
+  if (path === '/api/cats' && method === 'POST') {
+    if (!user) return needLogin();
+    if (!isAdmin(user)) return json({ error: '分类区域管理仅管理员可操作' }, 403);
+    const action = body.action;
+    const name = String(body.name || '').trim();
+    if (action === 'add') {
+      if (!name) return ERR('请填写分类名称');
+      if (name.length > 20) return ERR('分类名称不能超过 20 个字');
+      if (db.cats.includes(name)) return ERR('该分类已存在');
+      if (db.cats.length >= 30) return ERR('分类数量已达上限（30 个）');
+      db.cats.push(name);
+      await saveDb(kv, db);
+      return json({ ok: true, cats: db.cats });
+    }
+    if (action === 'rename') {
+      const to = String(body.to || '').trim();
+      if (!name || !to) return ERR('参数不完整');
+      if (to.length > 20) return ERR('分类名称不能超过 20 个字');
+      if (!db.cats.includes(name)) return ERR('原分类不存在');
+      if (db.cats.includes(to)) return ERR('目标分类名已存在');
+      db.cats = db.cats.map(c => (c === name ? to : c));
+      // 同步更新使用该分类的物品
+      let n = 0;
+      for (const it of db.items) { if (it.category === name) { it.category = to; n++; } }
+      await saveDb(kv, db);
+      return json({ ok: true, cats: db.cats, affected: n });
+    }
+    if (action === 'del') {
+      if (!db.cats.includes(name)) return ERR('分类不存在');
+      if (db.cats.length <= 1) return ERR('至少保留一个分类');
+      const inUse = db.items.filter(x => x.category === name).length;
+      if (inUse > 0) return ERR(`该分类下还有 ${inUse} 件物品，请先在物品档案中修改它们的分类，再删除此分类`);
+      db.cats = db.cats.filter(c => c !== name);
+      await saveDb(kv, db);
+      return json({ ok: true, cats: db.cats });
     }
     return ERR('未知操作');
   }
@@ -612,6 +657,7 @@ export async function onRequest(context) {
       let it = null;
       let isNew = false;
       const newName = String(row.newName || '').trim();
+      if (isReturn && newName) return ERR('归还入库（活动退回）只能选择当前库存已有的物品，新物品请走「正常入库」');
       if (newName) {
         // 新物品：若基本信息里已有同名同规格的物品则直接复用，否则自动建档
         const spec = String(row.spec || '').trim();
@@ -884,6 +930,11 @@ export async function onRequest(context) {
           await saveDb(kv, db);
           return ERR('物品已被删除，已自动驳回');
         }
+        // 审批时可补填/修正分类与所在区域（管理员在审批页填写）
+        const acat = String(body.category || '').trim();
+        const aloc = String(body.location || '').trim();
+        if (acat) it.category = acat;
+        if (aloc) it.location = aloc;
         const before = Number(it.qty);
         const after = before + Number(r.qty);
         it.qty = after;
@@ -892,7 +943,7 @@ export async function onRequest(context) {
           spec: it.spec, unit: it.unit,
           before, qty: Number(r.qty), after,
           person: r.applicant,
-          remark: (r.sub === 'return' ? '活动退回 · ' : '') + `审批通过 · ${r.reason || '入库'}`,
+          remark: (r.sub === 'return' ? '活动退回 · ' : '') + `审批通过 · ${r.reason || '入库'}` + (acat ? ' · 分类：' + acat : '') + (aloc ? ' · 所在区域：' + aloc : ''),
         });
         r.status = 'approved';
         r.approveTime = nowStr();
