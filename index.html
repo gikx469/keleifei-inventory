@@ -1807,7 +1807,7 @@ function stockFormGroups() {
     <div class="stk-row stk-head"><span>物品</span><span style="text-align:center">账面</span><span style="text-align:center">实盘</span><span style="text-align:center">差异</span></div>
     ${idx[c].map(({ r, i, it }) => `
       <div class="stk-row">
-        <span>${escapeHtml(it.name || '')}${it.spec ? `<small class="text-light"> ${escapeHtml(it.spec)}</small>` : ''}</span>
+        <span>${escapeHtml(it.name || '')}${it.spec ? `<small class="text-light"> ${escapeHtml(it.spec)}</small>` : ''}<small style="color:var(--text-light)"> 📍${escapeHtml(it.location || '未设区域')}</small></span>
         <span style="text-align:center">${r.bookQty}</span>
         <input type="number" min="0" step="0.01" placeholder="同账面" data-i="${i}" oninput="tkLive(this)">
         <span id="tk_diff_${i}" style="text-align:center;color:var(--text-light)">-</span>
@@ -1852,6 +1852,11 @@ async function submitStocktake() {
     renderTab('stocktake');
   } catch (e) { toast(e.message, 'error'); }
 }
+function stockLocOf(x) {
+  if (x.location != null && x.location !== '') return x.location;
+  const it = STATE.items.find(i => i.id === x.itemId);
+  return (it && it.location) || '未设区域';
+}
 function stockRecHtml(rec) {
   const all = rec.rows || [];
   const diffs = all.filter(x => Number(x.diff) !== 0);
@@ -1867,7 +1872,7 @@ function stockRecHtml(rec) {
         <div class="stk-row stk-head"><span>物品</span><span style="text-align:center">账面</span><span style="text-align:center">实盘</span><span style="text-align:center">差异</span></div>
         ${diffs.map(x => `
           <div class="stk-row">
-            <span>${escapeHtml(x.itemName)}${x.spec ? `<small class="text-light"> ${escapeHtml(x.spec)}</small>` : ''}</span>
+            <span>${escapeHtml(x.itemName)}${x.spec ? `<small class="text-light"> ${escapeHtml(x.spec)}</small>` : ''}<small style="color:var(--text-light)"> 📍${escapeHtml(stockLocOf(x))}</small></span>
             <span style="text-align:center">${x.bookQty}</span>
             <span style="text-align:center">${x.actualQty}</span>
             <span style="text-align:center;color:${Number(x.diff) > 0 ? '#16a34a' : '#dc2626'}">${Number(x.diff) > 0 ? '+' : ''}${x.diff}</span>
