@@ -593,6 +593,9 @@ function renderTab(id) {
   else if (id === 'logs') html = renderLogs();
   else if (id === 'settings') html = renderSettings();
   body.innerHTML = backBtn + html;
+  // 需要首次渲染列表的页面（台账/人员管理进入即显示数据，不用先动筛选）
+  const initFn = { logs: filterLogs, staff: renderStaffOps }[id];
+  if (initFn) initFn();
 }
 
 /* ============================================================
