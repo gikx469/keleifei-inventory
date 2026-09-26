@@ -1054,7 +1054,7 @@ export async function onRequest(context) {
       const actual = Number(row.actual);
       if (isNaN(actual) || actual < 0) return ERR(`「${it.name}」盘点数量不能为空或负数`);
       const book = Number(it.qty);
-      rec.rows.push({ itemId: it.id, itemName: it.name, spec: it.spec || '', unit: it.unit, bookQty: book, actualQty: actual, diff: actual - book });
+      rec.rows.push({ itemId: it.id, itemName: it.name, spec: it.spec || '', unit: it.unit, location: it.location || '', bookQty: book, actualQty: actual, diff: actual - book });
     }
     if (rec.rows.length === 0) return ERR('没有有效的盘点行');
     if (body.adjust) {
