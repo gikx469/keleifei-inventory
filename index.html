@@ -541,6 +541,7 @@ function afterLogin(state) {
 }
 
 function renderApp() {
+  captureItemsUI(); // 重建 DOM 前先记住物品页状态
   const role = STATE.me.role;
   const isAdmin = role === 'admin';
   const canIn = role === 'admin' || role === 'authorized';
@@ -571,6 +572,7 @@ function roleText(r) {
 }
 function switchTab(id) {
   STATE.tab = id;
+  if (id !== 'items') { ITUI.q = ''; ITUI.open = ''; ITUI.scroll = 0; }
   renderTab(id);
   // 切到子页时滚动到顶
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -597,6 +599,7 @@ function renderTab(id) {
   // 需要首次渲染列表的页面（台账/人员管理进入即显示数据，不用先动筛选）
   const initFn = { logs: filterLogs, staff: renderStaffOps }[id];
   if (initFn) initFn();
+  if (id === 'items') restoreItemsUI();
 }
 
 /* ============================================================
@@ -760,7 +763,7 @@ function renderItemsByCat(items) {
     const list = groups[c];
     if (!list.length) continue;
     html += `
-    <div class="cat-block">
+    <div class="cat-block" data-cat="${escapeHtml(c)}">
       <div class="cat-head" onclick="toggleCat(this)">
         <span class="cn">📁 ${c}</span>
         <span class="cnt">${list.length} 种物品 ▾</span>
@@ -788,6 +791,31 @@ function toggleCat(head) {
   const body = head.nextElementSibling;
   body.classList.toggle('open');
   head.querySelector('.cnt').textContent = head.querySelector('.cnt').textContent.replace(/[▾▴]/, body.classList.contains('open') ? '▴' : '▾');
+}
+// 记住物品页浏览状态：搜索词 / 展开的分类 / 滚动位置，刷新数据后自动恢复
+const ITUI = { q: '', open: '', scroll: 0 };
+function captureItemsUI() {
+  const inp = document.getElementById('itemSearch');
+  if (!inp) return; // 当前不在物品页（或 DOM 已重建），不覆盖
+  ITUI.q = inp.value;
+  ITUI.open = [...document.querySelectorAll('.cat-block')].filter(b => b.querySelector('.cat-body')?.classList.contains('open')).map(b => b.dataset.cat).join('|');
+  ITUI.scroll = window.scrollY || 0;
+}
+function restoreItemsUI() {
+  if (!ITUI.q && !ITUI.open && !ITUI.scroll) return;
+  const inp = document.getElementById('itemSearch');
+  if (inp && ITUI.q) { inp.value = ITUI.q; filterItems(); }
+  if (ITUI.open) {
+    const opens = ITUI.open.split('|');
+    document.querySelectorAll('.cat-block').forEach(b => {
+      if (!opens.includes(b.dataset.cat)) return;
+      const body = b.querySelector('.cat-body');
+      body.classList.add('open');
+      const cnt = b.querySelector('.cnt');
+      if (cnt) cnt.textContent = cnt.textContent.replace('▾', '▴');
+    });
+  }
+  if (ITUI.scroll) window.scrollTo(0, ITUI.scroll);
 }
 // 物品履历（仅管理员）：单个物品完整库存变动流水
 function showItemHistory(id) {
