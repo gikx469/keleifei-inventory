@@ -529,6 +529,36 @@ export async function onRequest(context) {
       return json({ ok: true });
     }
 
+    if (action === 'batch') {
+      // 批量修改所选物品的所在区域 / 分类（留空的字段不修改）
+      const ids = Array.isArray(body.ids) ? body.ids.map(String) : [];
+      if (!ids.length) return ERR('请先选择物品');
+      const loc = String(body.location || '').trim();
+      const cat = String(body.category || '').trim();
+      if (!loc && !cat) return ERR('所在区域和分类至少填写一项');
+      if (cat && !(db.cats || []).includes(cat)) {
+        db.cats = db.cats || [];
+        db.cats.push(cat);
+      }
+      let n = 0;
+      for (const it of db.items) {
+        if (!ids.includes(it.id)) continue;
+        if (loc) it.location = loc;
+        if (cat) it.category = cat;
+        n++;
+      }
+      if (!n) return ERR('没有匹配的物品');
+      db.logs.push({
+        id: uid(), time: nowStr(), type: 'file', itemId: '', itemName: `批量修改 ${n} 件物品`,
+        spec: '', unit: '',
+        before: null, qty: 0, after: null,
+        person: user.name,
+        remark: `批量修改 · ${loc ? '所在区域：' + loc : ''}${loc && cat ? ' · ' : ''}${cat ? '分类：' + cat : ''}`,
+      });
+      await saveDb(kv, db);
+      return json({ ok: true, count: n });
+    }
+
     if (action === 'delete') {
       const it = db.items.find(x => x.id === body.id);
       db.items = db.items.filter(x => x.id !== body.id);
