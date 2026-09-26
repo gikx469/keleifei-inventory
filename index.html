@@ -827,10 +827,11 @@ function restoreItemsUI() {
   if (ITUI.scroll) window.scrollTo(0, ITUI.scroll);
 }
 /* ---------- 批量选择：统一修改所在区域 / 分类（仅管理员） ---------- */
-const BATCH = { on: false, sel: {} };
+const BATCH = { on: false, sel: {}, loc: '', cat: '', catCustom: '' };
 function toggleBatchMode() {
   BATCH.on = !BATCH.on;
   BATCH.sel = {};
+  BATCH.loc = ''; BATCH.cat = ''; BATCH.catCustom = '';
   renderTab('items');
 }
 function batchPanel() {
@@ -844,10 +845,10 @@ function batchPanel() {
           <button class="btn ghost" style="padding:4px 10px;font-size:12px" onclick="batchClearSel()">清空选择</button>
         </div>
       </div>
-      <div class="row"><label>所在区域（留空则不修改）</label><input id="b_loc" placeholder="如：A 柜第二层、西墙货架"></div>
-      <div class="row"><label>分类（选「不修改」则保持原分类）</label><select id="b_cat" onchange="document.getElementById('b_cat_row').style.display=this.value==='__custom__'?'flex':'none'">
-        <option value="">不修改分类</option>${catOptions('', true)}</select></div>
-      <div class="row" id="b_cat_row" style="display:none"><label>新分类名（自动加入分类列表）</label><input id="b_cat_custom" placeholder="如：乐器区"></div>
+      <div class="row"><label>所在区域（留空则不修改）</label><input id="b_loc" value="${escapeHtml(BATCH.loc)}" oninput="BATCH.loc=this.value" placeholder="如：A 柜第二层、西墙货架"></div>
+      <div class="row"><label>分类（选「不修改」则保持原分类）</label><select id="b_cat" onchange="BATCH.cat=this.value;document.getElementById('b_cat_row').style.display=this.value==='__custom__'?'flex':'none'">
+        <option value="" ${BATCH.cat ? '' : 'selected'}>不修改分类</option>${catOptions(BATCH.cat, true)}</select></div>
+      <div class="row" id="b_cat_row" style="display:${BATCH.cat === '__custom__' ? 'flex' : 'none'}"><label>新分类名（自动加入分类列表）</label><input id="b_cat_custom" value="${escapeHtml(BATCH.catCustom)}" oninput="BATCH.catCustom=this.value" placeholder="如：乐器区"></div>
       <div class="btn-row mt">
         <button class="btn" onclick="applyBatch()">✅ 应用到所选（<span id="batch_cnt2">${n}</span>）</button>
       </div>
@@ -877,10 +878,10 @@ function batchSelAll() {
 function batchClearSel() { BATCH.sel = {}; renderTab('items'); }
 async function applyBatch() {
   const ids = Object.keys(BATCH.sel);
-  if (!ids.length) { toast('请先点选要修改的物品卡片', 'warning'); return; }
-  const loc = document.getElementById('b_loc')?.value.trim() || '';
-  let cat = document.getElementById('b_cat')?.value || '';
-  if (cat === '__custom__') cat = document.getElementById('b_cat_custom')?.value.trim() || '';
+  if (!ids.length) { toast('请先点选要修改的物品卡片（卡片上出现 ✓ 即已选中）', 'warning'); return; }
+  const loc = (BATCH.loc || '').trim();
+  let cat = BATCH.cat || '';
+  if (cat === '__custom__') cat = (BATCH.catCustom || '').trim();
   if (!loc && !cat) { toast('所在区域和分类至少填写一项', 'warning'); return; }
   const parts = [];
   if (loc) parts.push(`所在区域设为「${loc}」`);
@@ -890,6 +891,7 @@ async function applyBatch() {
     const r = await api('/items', 'POST', { action: 'batch', ids, location: loc, category: cat });
     toast(`✅ 已批量修改 ${r.count} 件物品`, 'success');
     BATCH.sel = {};
+    BATCH.loc = ''; BATCH.cat = ''; BATCH.catCustom = '';
     await refreshState();
     renderTab('items');
   } catch (e) { toast(e.message, 'error'); }
