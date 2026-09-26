@@ -773,7 +773,7 @@ function renderItemsByCat(items) {
             return `<div class="ig-card ${out ? 'out' : low ? 'warn' : ''}" onclick="showItemHistory('${it.id}')">
               <div class="nm">${escapeHtml(it.name)}${it.needDamage ? '<span class="damage-tag">需报损</span>' : ''}</div>
               ${it.spec ? `<div class="sp">${escapeHtml(it.spec)}</div>` : ''}
-              ${it.location ? `<div class="sp">📍 ${escapeHtml(it.location)}</div>` : ''}
+              ${it.location ? `<div class="sp">📍 ${escapeHtml(it.location)}</div>` : '<div class="sp" style="opacity:.45">📍 未设区域</div>'}
               <div class="qt">${it.qty}<small> ${escapeHtml(it.unit)}</small></div>
               <div class="sp">预警线 ${it.minQty}</div>
             </div>`;
@@ -812,7 +812,10 @@ function showItemHistory(id) {
         </tr>`;
       }).join('')}</tbody>
     </table></div>` : '<div class="empty">暂无流水</div>'}
-    <div class="btn-row mt"><button class="btn ghost" onclick="this.closest('.modal-bg').remove()">关闭</button></div>
+    <div class="btn-row mt">
+      <button class="btn ghost" onclick="this.closest('.modal-bg').remove()">关闭</button>
+      <button class="btn" onclick="this.closest('.modal-bg').remove(); showEditItem('${it.id}')">✏️ 编辑分类 / 所在区域</button>
+    </div>
   `);
 }
 function filterItems() {
