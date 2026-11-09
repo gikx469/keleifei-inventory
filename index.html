@@ -769,7 +769,7 @@ function renderItemsByCat(items) {
     html += `
     <div class="cat-block" data-cat="${escapeHtml(c)}">
       <div class="cat-head" onclick="toggleCat(this)">
-        <span class="cn">📁 ${c}</span>
+        <span class="cn">📁 ${escapeHtml(c)}</span>
         <span class="cnt">${list.length} 种物品 ▾</span>
       </div>
       <div class="cat-body">
@@ -869,7 +869,7 @@ function toggleBatchSel(id) {
 function batchSelAll() {
   const q = (document.getElementById('itemSearch')?.value || '').trim().toLowerCase();
   STATE.items.filter(it => !q ||
-    it.name.toLowerCase().includes(q) || (it.spec || '').toLowerCase().includes(q) || (it.barcode || '').includes(q)
+    String(it.name || '').toLowerCase().includes(q) || String(it.spec || '').toLowerCase().includes(q) || String(it.barcode || '').includes(q)
   ).forEach(it => BATCH.sel[it.id] = true);
   renderTab('items');
 }
@@ -896,9 +896,20 @@ async function applyBatch() {
 }
 // 物品履历（仅管理员）：单个物品完整库存变动流水
 function showItemHistory(id) {
-  if (STATE.me.role !== 'admin') return;
   const it = STATE.items.find(x => x.id === id);
   if (!it) return;
+  // 非管理员：只读物品信息，避免点击卡片没有任何反应
+  if (STATE.me.role !== 'admin') {
+    modal(`
+      <h3>📦 ${escapeHtml(it.name)}</h3>
+      <div class="text-light mb">分类：${escapeHtml(catOf(it))}${it.location ? ' · 所在区域：' + escapeHtml(it.location) : ''}</div>
+      <div class="row"><label>当前库存</label><input value="${it.qty} ${escapeHtml(it.unit)}" disabled></div>
+      ${it.spec ? `<div class="row"><label>规格</label><input value="${escapeHtml(it.spec)}" disabled></div>` : ''}
+      <div class="row"><label>预警线</label><input value="${it.minQty}" disabled></div>
+      <div class="btn-row"><button class="btn ghost" onclick="this.closest('.modal-bg').remove()">关闭</button></div>
+    `);
+    return;
+  }
   const rows = STATE.logs.filter(l => l.itemId === id);
   modal(`
     <h3>📜 ${escapeHtml(it.name)} · 库存变动流水</h3>
@@ -926,7 +937,7 @@ function showItemHistory(id) {
 function filterItems() {
   const q = document.getElementById('itemSearch').value.trim().toLowerCase();
   const filtered = q ? STATE.items.filter(i =>
-    i.name.toLowerCase().includes(q) || (i.spec || '').toLowerCase().includes(q) || (i.barcode || '').includes(q)
+    String(i.name || '').toLowerCase().includes(q) || String(i.spec || '').toLowerCase().includes(q) || String(i.barcode || '').includes(q)
   ) : STATE.items;
   document.getElementById('itemsList').innerHTML = renderItemsByCat(filtered);
 }
@@ -972,8 +983,9 @@ async function addItem() {
     barcode: document.getElementById('f_barcode').value.trim(),
   };
   if (!data.name) return toast('请填写物品名称', 'warning');
+  if (document.getElementById('f_cat').value === '__custom__' && !data.category) return toast('请填写自定义分类名称', 'warning');
   // 重复建档校验：同分类下同名
-  if (STATE.items.find(x => x.name === data.name && catOf(x) === (data.category || '其他'))) {
+  if (STATE.items.find(x => x.name === data.name && String(x.category || '') === (data.category || ''))) {
     if (!confirm('该分类下此物品已存在，请勿重复建档，请直接对现有物品增减数量。\n\n仍要坚持新建吗？')) return;
   }
   try {
@@ -987,10 +999,12 @@ async function addItem() {
 function showEditItem(id) {
   const it = STATE.items.find(x => x.id === id);
   if (!it) return;
+  // 历史遗留的自定义分类不在分类列表里时，回落到「手动填写」并回显，避免保存时被清空
+  const catUnknown = !!it.category && !cats().includes(it.category);
   modal(`
     <h3>✏️ 编辑物品档案</h3>
-    <div class="row"><label>所属分类区域</label><select id="f_cat" onchange="toggleCatCustom(this)">${catOptions(cats().includes(it.category) ? it.category : '', true)}</select></div>
-    <div class="row" id="f_cat_custom_row" style="display:none"><label>手动填写分类</label><input id="f_cat_custom" placeholder="输入自定义分类名" value="${cats().includes(it.category) ? '' : escapeHtml(it.category || '')}"></div>
+    <div class="row"><label>所属分类区域</label><select id="f_cat" onchange="toggleCatCustom(this)">${catOptions(it.category || '', true)}</select></div>
+    <div class="row" id="f_cat_custom_row" style="display:${catUnknown ? 'flex' : 'none'}"><label>手动填写分类</label><input id="f_cat_custom" placeholder="输入自定义分类名" value="${escapeHtml(it.category || '')}"></div>
     <div class="row"><label>名称</label><input id="f_name" value="${escapeHtml(it.name)}"></div>
     <div class="row"><label>所在区域<span class="optional-tag">选填</span></label><input id="f_location" value="${escapeHtml(it.location || '')}" placeholder="如：A 柜第二层、西墙货架"></div>
     <div class="row"><label>规格<span class="optional-tag">选填</span></label><input id="f_spec" value="${escapeHtml(it.spec || '')}"></div>
@@ -1019,6 +1033,9 @@ async function editItem(id) {
     needDamage: document.getElementById('f_need_damage').checked,
     barcode: document.getElementById('f_barcode').value.trim(),
   };
+  if (document.getElementById('f_cat').value === '__custom__' && !data.category) {
+    return toast('请填写自定义分类名称', 'warning');
+  }
   try {
     await api('/items', 'POST', data);
     document.querySelector('.modal-bg').remove();
@@ -1067,6 +1084,10 @@ function inboundRowHtml(idx, isFirst) {
       <div class="field-row in_new_fields" style="display:none">
         <label>分类</label>
         <select class="in_new_cat">${catOptions(cat)}<option value="">由管理员审批时填写</option></select>
+      </div>
+      <div class="field-row in_new_fields" style="display:none">
+        <label>所在区域<span class="optional-tag">选填</span></label>
+        <input class="in_new_location" placeholder="如：A 柜第二层、西墙货架">
       </div>
       <div class="field-row in_new_fields" style="display:none">
         <label>规格<span class="optional-tag">选填</span></label>
@@ -1178,8 +1199,10 @@ async function doInbound() {
   const items = [];
   for (const row of rows) {
     const selVal = row.querySelector('.in_item').value;
-    const qty = Number(row.querySelector('.in_qty').value);
+    const qtyRaw = row.querySelector('.in_qty').value.trim();
+    const qty = Number(qtyRaw);
     const remark = row.querySelector('.in_remark').value.trim();
+    if (!selVal && !qtyRaw && !remark) continue; // 完全空白的行直接忽略，不影响提交
     if (!qty || qty <= 0) {
       row.querySelector('.in_qty').focus();
       return toast('请填写每一行的数量', 'warning');
@@ -1200,6 +1223,7 @@ async function doInbound() {
         unit: row.querySelector('.in_new_unit').value.trim() || '件',
         needDamage: row.querySelector('.in_new_damage').checked,
         category: (row.querySelector('.in_new_cat') || {}).value !== undefined ? row.querySelector('.in_new_cat').value : cat,
+        location: (row.querySelector('.in_new_location') || {}).value ? row.querySelector('.in_new_location').value.trim() : '',
         qty, remark,
       });
     } else {
@@ -1413,14 +1437,19 @@ async function submitApply() {
   const requests = [];
   const buyItems = [];
   for (const row of rows) {
-    const qty = Number(row.querySelector('.ap_qty').value);
+    const qtyRaw = row.querySelector('.ap_qty').value.trim();
+    const qty = Number(qtyRaw);
+    const reason = row.querySelector('.ap_reason').value.trim();
+    const itemVal = type === 'buy'
+      ? row.querySelector('.ap_buy_name').value.trim()
+      : row.querySelector('.ap_item').value;
+    if (!itemVal && !qtyRaw && !reason) continue; // 完全空白行忽略，不影响提交
     if (!qty || qty <= 0) {
       row.querySelector('.ap_qty').focus();
       return toast('请填写每一行的数量', 'warning');
     }
-    const reason = row.querySelector('.ap_reason').value.trim();
     if (type === 'buy') {
-      const name = row.querySelector('.ap_buy_name').value.trim();
+      const name = itemVal;
       if (!name) {
         row.querySelector('.ap_buy_name').focus();
         return toast('请填写需要采买的物品名', 'warning');
@@ -1432,7 +1461,7 @@ async function submitApply() {
         qty, reason,
       });
     } else {
-      const itemId = row.querySelector('.ap_item').value;
+      const itemId = itemVal;
       if (!itemId) {
         row.querySelector('.ap_item').focus();
         return toast('请选择物品', 'warning');
@@ -1529,7 +1558,21 @@ function renderApprove() {
       `).join('') : '<div class="empty">暂无待审批申请</div>'}
     </div>
 
-    <div class="text-light" style="font-size:12px;margin:4px 2px 10px;">💡 采买申请批准后即完成，货物到货时请在「入库」中登记（采购来源可写入备注）。</div>
+    ${approved.length ? `
+    <div class="card">
+      <h2>🛒 待入库采买（${approved.length}）</h2>
+      ${approved.map(r => `
+        <div style="padding: 12px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px;">
+          <div class="flex between mb">
+            <div><span class="tag in">采买</span> <b>${escapeHtml(r.itemName)}</b> × ${r.qty} ${escapeHtml(r.unit)}</div>
+            <div class="text-light">${fmtTime(r.time)}</div>
+          </div>
+          <div class="text-light mb">申请人：<b>${escapeHtml(r.applicant)}</b> · 审批人：${escapeHtml(r.approver || '-')}${r.reason ? ' · 用途：' + escapeHtml(r.reason) : ''}</div>
+          <div class="btn-row"><button class="btn success" onclick="buyDone('${r.id}')">📦 登记到货入库</button></div>
+        </div>`).join('')}
+    </div>` : ''}
+
+    <div class="text-light" style="font-size:12px;margin:4px 2px 10px;">💡 采买批准后请在「待入库采买」中点「登记到货入库」，货物会直接加进库存；也可以在「入库」页手工登记。</div>
 
     ${recent.length ? `
     <div class="card">
@@ -1556,7 +1599,7 @@ function apPrefillCat(r) {
 }
 function apPrefillLoc(r) {
   if (r.itemId) { const it = STATE.items.find(x => x.id === r.itemId); if (it) return it.location || ''; }
-  return '';
+  return (r.newItem && r.newItem.location) || '';
 }
 async function approveReq(id, action) {
   let note = '';
@@ -1609,7 +1652,7 @@ async function buyDone(id) {
   const r = STATE.requests.find(x => x.id === id);
   if (!r) return;
   // 选择入库方式
-  const itemOpts = STATE.items.map(it =>
+  const itemOpts = '<option value="">-- 请选择要入库的物品 --</option>' + STATE.items.map(it =>
     `<option value="${it.id}">${escapeHtml(it.name)} · 现 ${it.qty} ${escapeHtml(it.unit)}</option>`
   ).join('');
   modal(`
@@ -1626,6 +1669,8 @@ async function buyDone(id) {
     </div>
     <div id="bd_new" style="display:none">
       <div class="row"><label>新物品名</label><input id="bd_new_name" value="${escapeHtml(r.itemName)}"></div>
+      <div class="row"><label>分类区域</label><select id="bd_cat">${catOptions('', false)}</select></div>
+      <div class="row"><label>所在区域<span class="optional-tag">选填</span></label><input id="bd_location" placeholder="如：A 柜第二层、西墙货架"></div>
       <div class="row"><label>规格</label><input id="bd_new_spec" value="${escapeHtml(r.spec || '')}"></div>
       <div class="row"><label>单位</label><input id="bd_new_unit" value="${escapeHtml(r.unit)}"></div>
       <div class="row"><label>预警线</label><input id="bd_new_min" type="number" min="0" value="0"></div>
@@ -1652,10 +1697,13 @@ async function submitBuyDone(id) {
   const data = { id, mode, qty };
   if (mode === 'existing') {
     data.itemId = document.getElementById('bd_item').value;
+    if (!data.itemId) return toast('请选择要入库的物品', 'warning');
   } else {
     data.newName = document.getElementById('bd_new_name').value.trim();
     data.spec = document.getElementById('bd_new_spec').value.trim();
     data.unit = document.getElementById('bd_new_unit').value.trim();
+    data.category = document.getElementById('bd_cat').value;
+    data.location = document.getElementById('bd_location').value.trim();
     data.minQty = Number(document.getElementById('bd_new_min').value) || 0;
     data.needDamage = document.getElementById('bd_new_damage').checked;
     if (!data.newName) return toast('请填写新物品名', 'warning');
@@ -1744,15 +1792,28 @@ function staffFiltered() {
   const t = document.getElementById('sf_type').value;
   const from = document.getElementById('sf_from').value;
   const to = document.getElementById('sf_to').value;
-  return STATE.logs.filter(l => {
-    if (!['in', 'out', 'damage', 'buy'].includes(l.type)) return false;
-    if (p && l.person !== p) return false;
-    if (t && l.type !== t) return false;
-    const d = String(l.time || '').slice(0, 10);
+  const inRange = tm => {
+    const d = String(tm || '').slice(0, 10);
     if (from && d < from) return false;
     if (to && d > to) return false;
     return true;
+  };
+  const logs = STATE.logs.filter(l => {
+    if (!['in', 'out', 'damage'].includes(l.type)) return false;
+    if (p && l.person !== p) return false;
+    if (t && l.type !== t) return false;
+    return inRange(l.time);
   });
+  // 采买申请本身不在库存流水里，单独并入人员记录，否则「采买」筛选永远是空的
+  const buys = (STATE.requests || [])
+    .filter(r => r.type === 'buy')
+    .filter(r => (!p || r.applicant === p) && (!t || t === 'buy') && inRange(r.time))
+    .map(r => ({
+      id: r.id, time: r.time, type: 'buy', itemName: r.itemName, spec: r.spec || '',
+      unit: r.unit, qty: r.qty, person: r.applicant,
+      remark: (r.reason || '') + (r.status ? '（' + statusText(r.status) + '）' : ''),
+    }));
+  return logs.concat(buys).sort((a, b) => String(b.time || '').localeCompare(String(a.time || '')));
 }
 function renderStaffOps() {
   const sumEl = document.getElementById('staffSummary');
@@ -1870,9 +1931,8 @@ async function submitStocktake() {
     .filter(r => r.actual != null && !isNaN(r.actual))
     .map(r => ({ itemId: r.itemId, actual: r.actual }));
   const adjust = document.getElementById('tk_adjust').checked;
-  const msg = rows.length
-    ? `已填写 ${rows.length} 项实盘数量${adjust ? '，差异将自动调账并记入流水' : '，仅保存记录不调账'}。确认本次操作？`
-    : '未填写任何实盘数量，将按「账实全部一致」保存记录。确认本次操作？';
+  if (!rows.length) return toast('请至少填写一项实盘数量（未填写的物品视为本次未盘点）', 'warning');
+  const msg = `已填写 ${rows.length} 项实盘数量${adjust ? '，差异将自动调账并记入流水' : '，仅保存记录不调账'}。确认本次操作？`;
   if (!confirm(msg)) return;
   try {
     const r = await api('/stocktake', 'POST', { rows, adjust });
@@ -2143,8 +2203,8 @@ function renderSettings() {
       <div id="catsBox" class="mb">${cats().map(c => `
         <span style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:14px;padding:4px 10px;margin:3px">
           ${escapeHtml(c)}
-          <a style="cursor:pointer" onclick="catRename('${escapeHtml(c)}')">✏️</a>
-          <a style="cursor:pointer;color:#e74c3c" onclick="catDel('${escapeHtml(c)}')">✕</a>
+          <a style="cursor:pointer" data-cat="${escapeHtml(c)}" onclick="catRename(this.dataset.cat)">✏️</a>
+          <a style="cursor:pointer;color:#e74c3c" data-cat="${escapeHtml(c)}" onclick="catDel(this.dataset.cat)">✕</a>
         </span>`).join('')}
       </div>
       <div class="btn-row">
@@ -2302,7 +2362,7 @@ async function downloadBackup() {
 async function restoreBackup(input) {
   const file = input.files[0];
   if (!file) return;
-  if (!confirm('恢复将覆盖所有现有数据，确定？')) { input.value = ''; return; }
+  if (!confirm('恢复将覆盖现有物品、流水、分类与盘点记录，并把所有用户的密码重置为 1234。确定继续？')) { input.value = ''; return; }
   try {
     const text = await file.text();
     const data = JSON.parse(text);
