@@ -146,6 +146,24 @@ async function saveDb(kv, db) {
   await kv.put(DB_KEY, JSON.stringify(db));
 }
 
+/* 分类兜底：任何被写入物品的分类都必须存在于分类列表，避免物品掉进「其他」或因下拉缺项被清空 */
+function ensureCat(db, cat) {
+  const c = String(cat || '').trim();
+  if (!c) return '';
+  db.cats = Array.isArray(db.cats) ? db.cats : [];
+  if (!db.cats.includes(c)) db.cats.push(c);
+  return c;
+}
+/* 物品编号：取现有最大编号 +1，避免删除物品后编号重复 */
+function nextCode(db) {
+  let max = 0;
+  for (const it of db.items) {
+    const m = /^WL(\d+)$/.exec(String(it.code || ''));
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  }
+  return 'WL' + String(max + 1).padStart(3, '0');
+}
+
 /* =========================================================
  * 工具函数
  * ========================================================= */
@@ -254,7 +272,7 @@ function pubState(db, u) {
 
   let requests = seeAll
     ? db.requests.slice()
-    : db.requests.filter(r => r.applicant === u.name || r.type === 'buy');
+    : db.requests.filter(r => r.applicant === u.name);
   requests.sort((a, b) => S(b.time).localeCompare(S(a.time)));
   requests = requests.slice(0, 500);
 
@@ -423,8 +441,7 @@ export async function onRequest(context) {
     if (!user) {
       return json({ needLogin: true, needSetup: db.users.length === 0 }, 401);
     }
-    if (token && db.sessions[token]) db.sessions[token].lastSeen = nowStr();
-    await saveDb(kv, db);
+    // 注意：这里不再回写数据库。每次 GET 都整库写一遍会放大并发覆盖风险，且 lastSeen 未被使用
     return json({ state: pubState(db, user) });
   }
 
@@ -465,13 +482,14 @@ export async function onRequest(context) {
       if (db.items.find(x => x.name === name && String(x.category || '') === cat)) {
         return ERR('该分类下此物品已存在，请勿重复建档，请直接对现有物品增减数量');
       }
-      const code = 'WL' + String(db.items.length + 1).padStart(3, '0');
+      const catAdd = ensureCat(db, cat);
+      const code = nextCode(db);
       const initQty = Math.max(0, Number(body.initQty) || 0);
       const id = uid();
       const item = {
         id, code, name,
         spec: String(body.spec || '').trim(),
-        category: cat,
+        category: catAdd,
         unit: String(body.unit || '').trim() || '件',
         qty: initQty,
         minQty: Math.max(0, Number(body.minQty) || 0),
@@ -485,7 +503,7 @@ export async function onRequest(context) {
         id: uid(), time: nowStr(), type: 'file', itemId: id, itemName: name,
         spec: item.spec, unit: item.unit,
         before: 0, qty: 0, after: initQty,
-        person: user.name, remark: `新增档案 · 分类：${cat || '未分类'}`,
+        person: user.name, remark: `新增档案 · 分类：${catAdd || '未分类'}`,
       });
       if (initQty > 0) {
         db.logs.push({
@@ -512,7 +530,7 @@ export async function onRequest(context) {
         it.name = name;
       }
       it.spec = String(body.spec || '').trim();
-      it.category = cat;
+      it.category = ensureCat(db, cat);
       it.location = String(body.location || '').trim();
       const unit = String(body.unit || '').trim();
       if (unit) it.unit = unit;
@@ -536,10 +554,7 @@ export async function onRequest(context) {
       const loc = String(body.location || '').trim();
       const cat = String(body.category || '').trim();
       if (!loc && !cat) return ERR('所在区域和分类至少填写一项');
-      if (cat && !(db.cats || []).includes(cat)) {
-        db.cats = db.cats || [];
-        db.cats.push(cat);
-      }
+      if (cat) ensureCat(db, cat);
       let n = 0;
       for (const it of db.items) {
         if (!ids.includes(it.id)) continue;
@@ -670,6 +685,7 @@ export async function onRequest(context) {
             unit: String(row.unit || '').trim() || '件',
             minQty: Math.max(0, Number(row.minQty) || 0),
             category: String(row.category || '').trim(),
+            location: String(row.location || '').trim(),
             needDamage: !!row.needDamage,
           } : null,
           applicantId: user.id, applicant: user.name,
@@ -696,9 +712,10 @@ export async function onRequest(context) {
           isNew = true;
           const id = uid();
           it = {
-            id, code: 'WL' + String(db.items.length + 1).padStart(3, '0'),
+            id, code: nextCode(db),
             name: newName, spec,
-            category: String(row.category || '').trim(),
+            category: ensureCat(db, row.category),
+            location: String(row.location || '').trim(),
             unit: String(row.unit || '').trim() || '件',
             qty: 0, minQty: Math.max(0, Number(row.minQty) || 0),
             needDamage: !!row.needDamage,
@@ -943,9 +960,9 @@ export async function onRequest(context) {
           it = db.items.find(x => x.name === r.newItem.name && String(x.spec || '') === nspec);
           if (!it) {
             it = {
-              id: uid(), code: 'WL' + String(db.items.length + 1).padStart(3, '0'),
+              id: uid(), code: nextCode(db),
               name: r.newItem.name, spec: nspec,
-              category: String(r.newItem.category || '').trim(),
+              category: ensureCat(db, r.newItem.category),
               unit: String(r.newItem.unit || '').trim() || '件',
               qty: 0, minQty: Math.max(0, Number(r.newItem.minQty) || 0),
               needDamage: !!r.newItem.needDamage,
@@ -962,8 +979,8 @@ export async function onRequest(context) {
         }
         // 审批时可补填/修正分类与所在区域（管理员在审批页填写）
         const acat = String(body.category || '').trim();
-        const aloc = String(body.location || '').trim();
-        if (acat) it.category = acat;
+        const aloc = String(body.location || (r.newItem && r.newItem.location) || '').trim();
+        if (acat) it.category = ensureCat(db, acat);
         if (aloc) it.location = aloc;
         const before = Number(it.qty);
         const after = before + Number(r.qty);
@@ -1042,8 +1059,10 @@ export async function onRequest(context) {
       if (!name) return ERR('请填写新物品名称');
       const id = uid();
       it = {
-        id, code: 'WL' + String(db.items.length + 1).padStart(3, '0'), name,
-        spec: String(body.spec || '').trim(), category: '采买入库',
+        id, code: nextCode(db), name,
+        spec: String(body.spec || '').trim(),
+        category: ensureCat(db, body.category),
+        location: String(body.location || '').trim(),
         unit: String(body.unit || '').trim() || r.unit || '件',
         qty: 0, minQty: Math.max(0, Number(body.minQty) || 0),
         needDamage: !!body.needDamage,
@@ -1164,13 +1183,15 @@ export async function onRequest(context) {
     if (!user) return needLogin();
     if (!isAdmin(user)) return json({ error: '需要管理员权限' }, 403);
     const payload = {
-      version: 2,
+      version: 3,
       platform: 'edgeone-kv',
       exportedAt: nowStr(),
       users: db.users.map(u => ({ id: u.id, name: u.name, role: u.role, createdAt: u.createdAt })),
       items: db.items,
       logs: db.logs,
       requests: db.requests,
+      cats: db.cats,
+      stocktakes: db.stocktakes || [],
     };
     return new Response(JSON.stringify(payload, null, 2), {
       headers: {
@@ -1204,6 +1225,7 @@ export async function onRequest(context) {
       newDb.items.push({
         id: it.id || uid(), code: it.code || '', name: String(it.name || ''),
         spec: it.spec || '', category: it.category || '',
+        location: it.location || '', barcode: it.barcode || '', needDamage: !!it.needDamage,
         unit: it.unit || '件', qty: Number(it.qty) || 0,
         minQty: Number(it.minQty || 0), createdAt: it.createdAt || today(),
       });
@@ -1235,6 +1257,14 @@ export async function onRequest(context) {
         doneQty: r.doneQty != null ? Number(r.doneQty) : (r.done_qty != null ? Number(r.done_qty) : null),
         doneItemId: r.doneItemId || r.done_item_id || '',
       });
+    }
+    // 分类列表与盘点记录一并恢复；旧备份没有这两项时保留默认分类
+    if (Array.isArray(d.cats) && d.cats.length) {
+      newDb.cats = d.cats.map(c => String(c).trim()).filter(Boolean);
+    }
+    for (const it of newDb.items) { if (it.category) ensureCat(newDb, it.category); }
+    if (Array.isArray(d.stocktakes)) {
+      newDb.stocktakes = d.stocktakes.filter(x => x && typeof x === 'object');
     }
     await saveDb(kv, newDb);
     return json({ ok: true });
